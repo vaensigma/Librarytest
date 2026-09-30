@@ -1,63 +1,98 @@
 --[[
     ═══════════════════════════════════════════════════════════════
-       NEBUBLOX — DASHBOARD UI — v8.0.0
+       NEBUBLOX — v8.0.0-Nova — DASHBOARD EDITION
     ═══════════════════════════════════════════════════════════════
-    API: CreateWindow → CreateTab → CreateSection / CreateToggle /
-          CreateButton / CreateSlider / CreateDropdown / CreateTextBox /
-          CreateLabel / CreateParagraph • Flags • Notify • Configs
-    Tab named "Dashboard" auto-builds: welcome banner, stat cards,
-    live FPS graph. RightShift = toggle UI.
+    One-paste: library + built-in example (Pets Universe Auto Farm)
+    RightShift = toggle UI • Drag by header • Search filters tabs
+    Tab "Dashboard" auto-builds: welcome, stats, live FPS graph
 ]]
 
+local OK, ERR = pcall(function()
+
+-- ==================================================================
+--  ENV + CLEANUP
+-- ==================================================================
 local getgenv = type(getgenv) == "function" and getgenv or function() return _G end
 local genv = getgenv()
 
 if genv.Nebublox and type(genv.Nebublox.Destroy) == "function" then
     pcall(function() genv.Nebublox:Destroy() end)
 end
+if genv.Nebublox_KeyConn then
+    pcall(function() genv.Nebublox_KeyConn:Disconnect() end)
+    genv.Nebublox_KeyConn = nil
+end
 
+local writefile  = type(writefile) == "function" and writefile or function() end
+local readfile   = type(readfile) == "function" and readfile or function() return "" end
+local isfile     = type(isfile) == "function" and isfile or function() return false end
+local makefolder = type(makefolder) == "function" and makefolder or function() end
+local isfolder   = type(isfolder) == "function" and isfolder or function() return false end
+
+-- ==================================================================
+--  SERVICES
+-- ==================================================================
 local Players          = game:GetService("Players")
 local RunService       = game:GetService("RunService")
 local TweenService     = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local HttpService      = game:GetService("HttpService")
-local LocalPlayer      = Players.LocalPlayer
+local TeleportService  = game:GetService("TeleportService")
 
-local writefile   = type(writefile) == "function" and writefile or function() end
-local readfile    = type(readfile) == "function" and readfile or function() return "" end
-local isfile      = type(isfile) == "function" and isfile or function() return false end
-local makefolder  = type(makefolder) == "function" and makefolder or function() end
-local isfolder    = type(isfolder) == "function" and isfolder or function() return false end
+local LocalPlayer = Players.LocalPlayer
+if not LocalPlayer then
+    LocalPlayer = Players.PlayerAdded:Wait()
+end
 
 -- ==================================================================
---  THEME
+--  THEME (Nebublox palette)
 -- ==================================================================
+local FontOK = pcall(function() return Enum.Font.Montserrat end)
+
 local T = {
-    Background    = Color3.fromRGB(9, 7, 20),
-    Sidebar       = Color3.fromRGB(13, 10, 28),
-    Surface       = Color3.fromRGB(17, 14, 35),
-    SurfaceLight  = Color3.fromRGB(26, 21, 50),
-    Card          = Color3.fromRGB(20, 16, 42),
-    Stroke        = Color3.fromRGB(60, 50, 110),
-    Accent        = Color3.fromRGB(0, 255, 255),
-    Accent2       = Color3.fromRGB(138, 43, 226),
-    Text          = Color3.fromRGB(240, 240, 255),
-    TextDim       = Color3.fromRGB(160, 165, 200),
-    Success       = Color3.fromRGB(0, 255, 170),
-    Warning       = Color3.fromRGB(255, 184, 0),
-    Error         = Color3.fromRGB(255, 75, 110),
-    Font          = Enum.Font.Gotham,
-    FontBold      = Enum.Font.GothamBold,
-    Corner        = UDim.new(0, 10),
+    Background   = Color3.fromRGB(10, 7, 22),
+    Sidebar      = Color3.fromRGB(13, 10, 28),
+    Surface      = Color3.fromRGB(17, 13, 34),
+    SurfaceLight = Color3.fromRGB(26, 21, 48),
+    Card         = Color3.fromRGB(21, 16, 44),
+    Stroke       = Color3.fromRGB(64, 52, 120),
+    Accent       = Color3.fromRGB(0, 255, 255),
+    Accent2      = Color3.fromRGB(138, 43, 226),
+    Text         = Color3.fromRGB(235, 240, 255),
+    TextDim      = Color3.fromRGB(170, 180, 215),
+    TextMuted    = Color3.fromRGB(120, 130, 165),
+    Success      = Color3.fromRGB(0, 255, 170),
+    Warning      = Color3.fromRGB(255, 184, 0),
+    Error        = Color3.fromRGB(255, 75, 110),
+    Glass        = 0.25,
+    TextStroke   = 1.2,
+    Font         = FontOK and Enum.Font.Montserrat or Enum.Font.Gotham,
+    FontBold     = FontOK and Enum.Font.MontserratBold or Enum.Font.GothamBold,
+    Corner       = UDim.new(0, 10),
 }
 
+-- ==================================================================
+--  NEBUBLOX CORE
+-- ==================================================================
+local function GetExecutorName()
+    local ok, name = pcall(function()
+        if identifyexecutor then return identifyexecutor() end
+        if getexecutorname then return getexecutorname() end
+        return "Unknown Executor"
+    end)
+    return ok and name or "Unknown Executor"
+end
+
 local Nebublox = {
-    Version = "8.0.0-Dashboard",
-    Flags = {},
-    Conns = {},
-    Theme = T,
+    Version      = "8.0.0-Nova",
+    Flags        = {},
+    Conns        = {},
+    Theme        = T,
     ConfigFolder = "Nebublox",
-    UIKeybind = Enum.KeyCode.RightShift,
+    UIKeybind    = Enum.KeyCode.RightShift,
+    SessionID    = HttpService:GenerateGUID(false):sub(1, 8),
+    Executor     = GetExecutorName(),
+    Windows      = {},
 }
 genv.Nebublox = Nebublox
 _G.Nebublox = Nebublox
@@ -70,6 +105,7 @@ local function Create(class, props)
     if not ok or not inst then
         local f = Instance.new("Frame")
         f.Visible = false
+        f.Name = class .. "_Error"
         return f
     end
     local parent = nil
@@ -99,6 +135,16 @@ local function Stroke(inst, color, thickness, transparency)
     })
 end
 
+local function AddTextStroke(inst)
+    if T.TextStroke <= 0 then return end
+    Create("UIStroke", {
+        Color = Color3.new(0, 0, 0),
+        Thickness = T.TextStroke,
+        ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual,
+        Parent = inst,
+    })
+end
+
 local function Tween(obj, props, time, style, dir)
     if not obj or not obj.Parent then return nil end
     local t = TweenService:Create(obj,
@@ -121,6 +167,27 @@ local function Track(conn)
     return conn
 end
 
+-- holographic animated gradient (Nebublox soul)
+local function MakeHolographic(label)
+    local g = Create("UIGradient", {
+        Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, T.Accent),
+            ColorSequenceKeypoint.new(1, T.Accent2),
+        }),
+        Parent = label,
+    })
+    local conn
+    conn = RunService.RenderStepped:Connect(function(dt)
+        if not label or not label.Parent then
+            if conn then conn:Disconnect() end
+            return
+        end
+        g.Rotation = (g.Rotation + dt * 60) % 360
+    end)
+    table.insert(Nebublox.Conns, conn)
+    return g
+end
+
 -- ==================================================================
 --  FPS TRACKER
 -- ==================================================================
@@ -139,15 +206,6 @@ do
     end))
 end
 
-local function GetExecutorName()
-    local ok, name = pcall(function()
-        if identifyexecutor then return identifyexecutor() end
-        if getexecutorname then return getexecutorname() end
-        return "Unknown"
-    end)
-    return ok and name or "Unknown"
-end
-
 -- ==================================================================
 --  GUI ROOT
 -- ==================================================================
@@ -156,20 +214,29 @@ local function GetParent()
     if ok and hui then return hui end
     return LocalPlayer:WaitForChild("PlayerGui", 5)
 end
+local Parent = GetParent()
 
 local ScreenGui = Create("ScreenGui", {
     Name = "NebubloxUI",
     ResetOnSpawn = false,
     DisplayOrder = 9999,
     IgnoreGuiInset = true,
+    Parent = Parent,
 })
+table.insert(Nebublox.Windows, ScreenGui)
 
 -- ==================================================================
---  NOTIFY
+--  NOTIFICATIONS (Nebublox style: glow bar + progress + slide)
 -- ==================================================================
 local NotifHolder
 do
-    local ng = Create("ScreenGui", { Name = "NebubloxNotifs", ResetOnSpawn = false, DisplayOrder = 10000 })
+    local ng = Create("ScreenGui", {
+        Name = "NebubloxNotifs",
+        ResetOnSpawn = false,
+        DisplayOrder = 10000,
+        Parent = Parent,
+    })
+    table.insert(Nebublox.Windows, ng)
     NotifHolder = Create("Frame", {
         Size = UDim2.new(0, 320, 1, -40),
         Position = UDim2.new(1, -330, 0, 20),
@@ -183,8 +250,6 @@ do
         SortOrder = Enum.SortOrder.LayoutOrder,
         Parent = NotifHolder,
     })
-    pcall(function() ng.Parent = GetParent() end)
-    Nebublox.NotifGui = ng
 end
 
 function Nebublox:Notify(data)
@@ -220,6 +285,7 @@ function Nebublox:Notify(data)
         Size = UDim2.new(1, 0, 0, 0),
         AutomaticSize = Enum.AutomaticSize.Y,
         BackgroundColor3 = T.Surface,
+        BackgroundTransparency = 0.08,
         ClipsDescendants = true,
         Position = UDim2.new(1, 340, 0, 0),
         Parent = slot,
@@ -246,7 +312,7 @@ function Nebublox:Notify(data)
         Parent = body,
     })
     Create("UIListLayout", { Padding = UDim.new(0, 2), Parent = body })
-    Create("TextLabel", {
+    local t1 = Create("TextLabel", {
         Size = UDim2.new(1, 0, 0, 18),
         BackgroundTransparency = 1,
         RichText = true,
@@ -257,6 +323,7 @@ function Nebublox:Notify(data)
         TextXAlignment = Enum.TextXAlignment.Left,
         Parent = body,
     })
+    AddTextStroke(t1)
     Create("TextLabel", {
         Size = UDim2.new(1, 0, 0, 0),
         AutomaticSize = Enum.AutomaticSize.Y,
@@ -304,1261 +371,7 @@ function Nebublox:Notify(data)
 end
 
 -- ==================================================================
---  WINDOW
--- ==================================================================
-local CurrentWindow = nil
-
-function Nebublox:CreateWindow(config)
-    config = config or {}
-    if CurrentWindow then
-        pcall(function() CurrentWindow:Destroy() end)
-    end
-
-    local self = {
-        Tabs = {},
-        CurrentTab = nil,
-        Frame = nil,
-    }
-
-    -- ===== Main frame =====
-    local main = Create("Frame", {
-        Name = "Main",
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        Position = UDim2.new(0.5, 0, 0.5, 0),
-        Size = UDim2.new(0, 920, 0, 580),
-        BackgroundColor3 = T.Background,
-        BorderSizePixel = 0,
-        ClipsDescendants = true,
-        Parent = ScreenGui,
-    })
-    Round(main, 14)
-    Stroke(main, T.Stroke, 1, 0.3)
-    self.Frame = main
-
-    -- ===== Sidebar =====
-    local sidebar = Create("Frame", {
-        Name = "Sidebar",
-        Size = UDim2.new(0, 200, 1, 0),
-        BackgroundColor3 = T.Sidebar,
-        BorderSizePixel = 0,
-        Parent = main,
-    })
-    Create("Frame", { -- right divider
-        Size = UDim2.new(0, 1, 1, 0),
-        Position = UDim2.new(1, -1, 0, 0),
-        BackgroundColor3 = T.Stroke,
-        BackgroundTransparency = 0.5,
-        BorderSizePixel = 0,
-        Parent = sidebar,
-    })
-    local sideCorner = Create("UICorner", { CornerRadius = UDim.new(0, 14), Parent = sidebar })
-    Create("Frame", { -- fix right corners
-        Size = UDim2.new(0, 14, 1, 0),
-        Position = UDim2.new(1, -14, 0, 0),
-        BackgroundColor3 = T.Sidebar,
-        BorderSizePixel = 0,
-        Parent = sidebar,
-    })
-
-    -- logo
-    local logo = Create("TextLabel", {
-        Size = UDim2.new(1, -24, 0, 50),
-        Position = UDim2.new(0, 12, 0, 10),
-        BackgroundTransparency = 1,
-        RichText = true,
-        Text = "NEBU<b>BLOX</b>",
-        Font = T.FontBold,
-        TextSize = 22,
-        TextColor3 = T.Text,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        Parent = sidebar,
-    })
-    local logoGrad = Create("UIGradient", {
-        Color = ColorSequence.new({
-            ColorSequenceKeypoint.new(0, T.Accent),
-            ColorSequenceKeypoint.new(1, T.Accent2),
-        }),
-        Parent = logo,
-    })
-
-    -- nav list
-    local navScroll = Create("ScrollingFrame", {
-        Size = UDim2.new(1, -12, 1, -80),
-        Position = UDim2.new(0, 6, 0, 64),
-        BackgroundTransparency = 1,
-        BorderSizePixel = 0,
-        ScrollBarThickness = 3,
-        ScrollBarImageColor3 = T.Accent,
-        CanvasSize = UDim2.new(0, 0, 0, 0),
-        AutomaticCanvasSize = Enum.AutomaticSize.Y,
-        Parent = sidebar,
-    })
-    local navList = Create("UIListLayout", {
-        Padding = UDim.new(0, 4),
-        SortOrder = Enum.SortOrder.LayoutOrder,
-        Parent = navScroll,
-    })
-
-    -- ===== Header =====
-    local header = Create("Frame", {
-        Name = "Header",
-        Size = UDim2.new(1, -200, 0, 56),
-        Position = UDim2.new(0, 200, 0, 0),
-        BackgroundColor3 = T.Surface,
-        BorderSizePixel = 0,
-        Parent = main,
-    })
-    local pageTitle = Create("TextLabel", {
-        Name = "PageTitle",
-        Size = UDim2.new(0, 250, 1, 0),
-        Position = UDim2.new(0, 18, 0, 0),
-        BackgroundTransparency = 1,
-        Text = "Dashboard",
-        Font = T.FontBold,
-        TextSize = 17,
-        TextColor3 = T.Text,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        Parent = header,
-    })
-    -- search
-    local search = Create("TextBox", {
-        Size = UDim2.new(0, 190, 0, 32),
-        Position = UDim2.new(1, -400, 0.5, 0),
-        AnchorPoint = Vector2.new(0, 0.5),
-        BackgroundColor3 = T.Sidebar,
-        Text = "",
-        PlaceholderText = "Search...",
-        PlaceholderColor3 = T.TextDim,
-        TextColor3 = T.Text,
-        Font = T.Font,
-        TextSize = 13,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        ClipsDescendants = true,
-        ClearTextOnFocus = false,
-        Parent = header,
-    })
-    Round(search, 8)
-    Stroke(search, T.Stroke, 1, 0.5)
-    Create("TextLabel", {
-        Size = UDim2.new(0, 20, 1, 0),
-        Position = UDim2.new(0, 8, 0, 0),
-        BackgroundTransparency = 1,
-        Text = "🔍",
-        TextSize = 13,
-        Font = T.Font,
-        Parent = search,
-    })
-    search.TextXAlignment = Enum.TextXAlignment.Left
-    search.Position = UDim2.new(1, -400, 0.5, 0)
-    -- pad the text
-    do
-        local old = search.TextXAlignment
-        search:GetPropertyChangedSignal("TextXAlignment"):Connect(function() end)
-    end
-    -- fps chip
-    local fpsChip = Create("TextLabel", {
-        Size = UDim2.new(0, 70, 0, 32),
-        Position = UDim2.new(1, -195, 0.5, 0),
-        AnchorPoint = Vector2.new(0, 0.5),
-        BackgroundColor3 = T.Sidebar,
-        Text = "60 FPS",
-        Font = T.FontBold,
-        TextSize = 12,
-        TextColor3 = T.Accent,
-        Parent = header,
-    })
-    Round(fpsChip, 8)
-    Stroke(fpsChip, T.Accent, 1, 0.6)
-    -- user chip
-    local userChip = Create("Frame", {
-        Size = UDim2.new(0, 150, 0, 32),
-        Position = UDim2.new(1, -14, 0.5, 0),
-        AnchorPoint = Vector2.new(1, 0.5),
-        BackgroundColor3 = T.Sidebar,
-        Parent = header,
-    })
-    Round(userChip, 8)
-    Stroke(userChip, T.Stroke, 1, 0.5)
-    Create("TextLabel", {
-        Size = UDim2.new(0, 24, 1, 0),
-        Position = UDim2.new(0, 4, 0, 0),
-        BackgroundTransparency = 1,
-        Text = "👤",
-        TextSize = 14,
-        Parent = userChip,
-    })
-    Create("TextLabel", {
-        Size = UDim2.new(1, -34, 1, 0),
-        Position = UDim2.new(0, 30, 0, 0),
-        BackgroundTransparency = 1,
-        Text = LocalPlayer.Name,
-        Font = T.FontBold,
-        TextSize = 12,
-        TextColor3 = T.Text,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        TextTruncate = Enum.TextTruncate.AtEnd,
-        Parent = userChip,
-    })
-
-    -- ===== Content =====
-    local content = Create("ScrollingFrame", {
-        Name = "Content",
-        Size = UDim2.new(1, -200, 1, -56),
-        Position = UDim2.new(0, 200, 0, 56),
-        BackgroundTransparency = 1,
-        BorderSizePixel = 0,
-        ScrollBarThickness = 4,
-        ScrollBarImageColor3 = T.Accent2,
-        CanvasSize = UDim2.new(0, 0, 0, 0),
-        AutomaticCanvasSize = Enum.AutomaticSize.Y,
-        Parent = main,
-    })
-    Create("UIPadding", {
-        PaddingTop = UDim.new(0, 14),
-        PaddingBottom = UDim.new(0, 14),
-        PaddingLeft = UDim.new(0, 14),
-        PaddingRight = UDim.new(0, 14),
-        Parent = content,
-    })
-    local contentList = Create("UIListLayout", {
-        Padding = UDim.new(0, 12),
-        SortOrder = Enum.SortOrder.LayoutOrder,
-        Parent = content,
-    })
-
-    -- ===== search filter =====
-    search:GetPropertyChangedSignal("Text"):Connect(function()
-        local q = search.Text:lower()
-        for _, tab in ipairs(self.Tabs) do
-            if tab.NavButton then
-                local match = (q == "") or (tab.Name:lower():find(q, 1, true) ~= nil)
-                tab.NavButton.Visible = match
-            end
-        end
-    end)
-
-    -- ===== dragging =====
-    do
-        local dragging, dragStart, startPos = false, nil, nil
-        Track(header.InputBegan:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.MouseButton1
-                or input.UserInputType == Enum.UserInputType.Touch then
-                dragging = true
-                dragStart = input.Position
-                startPos = main.Position
-            end
-        end))
-        Track(UserInputService.InputChanged:Connect(function(input)
-            if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
-                or input.UserInputType == Enum.UserInputType.Touch) then
-                local delta = input.Position - dragStart
-                main.Position = UDim2.new(
-                    startPos.X.Scale, startPos.X.Offset + delta.X,
-                    startPos.Y.Scale, startPos.Y.Offset + delta.Y
-                )
-            end
-        end))
-        Track(UserInputService.InputEnded:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.MouseButton1
-                or input.UserInputType == Enum.UserInputType.Touch then
-                dragging = false
-            end
-        end))
-    end
-
-    -- ===== FPS chip updater =====
-    task.spawn(function()
-        while self.Frame and self.Frame.Parent do
-            pcall(function()
-                fpsChip.Text = tostring(FPS.value) .. " FPS"
-                if FPS.value >= 45 then
-                    fpsChip.TextColor3 = T.Success
-                elseif FPS.value >= 25 then
-                    fpsChip.TextColor3 = T.Warning
-                else
-                    fpsChip.TextColor3 = T.Error
-                end
-            end)
-            task.wait(0.5)
-        end
-    end)
-
-    -- ===== tabs =====
-    local order = 0
-    function self:SelectTab(tab)
-        for _, t in ipairs(self.Tabs) do
-            t.Page.Visible = false
-            if t.NavAccent then t.NavAccent.Visible = false end
-            t.NavButton.BackgroundColor3 = T.Sidebar
-            t.NavLabel.TextColor3 = T.TextDim
-            if t.NavIcon and t.NavIcon:IsA("TextLabel") then
-                t.NavIcon.TextTransparency = 0.4
-            end
-        end
-        tab.Page.Visible = true
-        if tab.NavAccent then tab.NavAccent.Visible = true end
-        tab.NavButton.BackgroundColor3 = T.SurfaceLight
-        tab.NavLabel.TextColor3 = T.Accent
-        if tab.NavIcon and tab.NavIcon:IsA("TextLabel") then
-            tab.NavIcon.TextTransparency = 0
-        end
-        pageTitle.Text = tab.Name
-        self.CurrentTab = tab
-    end
-
-    function self:CreateTab(name, icon)
-        order = order + 1
-        local tab = { Name = name, Icon = icon }
-
-        -- nav button
-        local navBtn = Create("TextButton", {
-            Name = "Nav_" .. name,
-            Size = UDim2.new(1, 0, 0, 42),
-            BackgroundColor3 = T.Sidebar,
-            BackgroundTransparency = 0,
-            Text = "",
-            AutoButtonColor = false,
-            ClipsDescendants = true,
-            LayoutOrder = order,
-            Parent = navScroll,
-        })
-        Round(navBtn, 8)
-        local navAccent = Create("Frame", {
-            Size = UDim2.new(0, 3, 0, 20),
-            Position = UDim2.new(0, 0, 0.5, 0),
-            AnchorPoint = Vector2.new(0, 0.5),
-            BackgroundColor3 = T.Accent,
-            BorderSizePixel = 0,
-            Visible = false,
-            Parent = navBtn,
-        })
-        Round(navAccent, 2)
-        local navIcon = Create("TextLabel", {
-            Size = UDim2.new(0, 22, 0, 22),
-            Position = UDim2.new(0, 14, 0.5, 0),
-            AnchorPoint = Vector2.new(0, 0.5),
-            BackgroundTransparency = 1,
-            Text = icon or "◈",
-            TextSize = 15,
-            Font = T.Font,
-            TextColor3 = T.TextDim,
-            TextTransparency = 0.4,
-            Parent = navBtn,
-        })
-        local navLabel = Create("TextLabel", {
-            Size = UDim2.new(1, -52, 0, 20),
-            Position = UDim2.new(0, 44, 0.5, 0),
-            AnchorPoint = Vector2.new(0, 0.5),
-            BackgroundTransparency = 1,
-            Text = name,
-            Font = T.FontBold,
-            TextSize = 13,
-            TextColor3 = T.TextDim,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            Parent = navBtn,
-        })
-
-        -- page
-        local page = Create("ScrollingFrame", {
-            Name = "Page_" .. name,
-            Size = UDim2.new(1, 0, 1, 0),
-            BackgroundTransparency = 1,
-            BorderSizePixel = 0,
-            ScrollBarThickness = 4,
-            ScrollBarImageColor3 = T.Accent2,
-            CanvasSize = UDim2.new(0, 0, 0, 0),
-            AutomaticCanvasSize = Enum.AutomaticSize.Y,
-            Visible = false,
-            Parent = content,
-        })
-        Create("UIPadding", {
-            PaddingTop = UDim.new(0, 2),
-            PaddingBottom = UDim.new(0, 2),
-            Parent = page,
-        })
-        Create("UIListLayout", {
-            Padding = UDim.new(0, 10),
-            SortOrder = Enum.SortOrder.LayoutOrder,
-            Parent = page,
-        })
-
-        tab.NavButton = navBtn
-        tab.NavAccent = navAccent
-        tab.NavIcon = navIcon
-        tab.NavLabel = navLabel
-        tab.Page = page
-        tab.CurrentCard = nil
-        tab.ElementOrder = 0
-
-        navBtn.MouseButton1Click:Connect(function()
-            self:SelectTab(tab)
-        end)
-        navBtn.MouseEnter:Connect(function()
-            if self.CurrentTab ~= tab then
-                Tween(navBtn, { BackgroundColor3 = T.Surface }, 0.15)
-            end
-        end)
-        navBtn.MouseLeave:Connect(function()
-            if self.CurrentTab ~= tab then
-                Tween(navBtn, { BackgroundColor3 = T.Sidebar }, 0.15)
-            end
-        end)
-
-        table.insert(self.Tabs, tab)
-
-        -- ====== DASHBOARD AUTO-BUILD ======
-        if name:lower() == "dashboard" then
-            self:BuildDashboard(tab)
-        end
-
-        if #self.Tabs == 1 then
-            self:SelectTab(tab)
-        end
-
-        return tab
-    end
-
-    -- ====== dashboard builder ======
-    function self:BuildDashboard(tab)
-        -- welcome banner
-        local banner = Create("Frame", {
-            Size = UDim2.new(1, 0, 0, 0),
-            AutomaticSize = Enum.AutomaticSize.Y,
-            BackgroundColor3 = T.Card,
-            Parent = tab.Page,
-        })
-        Round(banner, 12)
-        Stroke(banner, T.Accent2, 1, 0.5)
-        local bGrad = Create("UIGradient", {
-            Color = ColorSequence.new({
-                ColorSequenceKeypoint.new(0, Color3.fromRGB(30, 20, 60)),
-                ColorSequenceKeypoint.new(1, Color3.fromRGB(15, 12, 35)),
-            }),
-            Rotation = 90,
-            Parent = banner,
-        })
-        local bPad = Create("UIPadding", {
-            PaddingTop = UDim.new(0, 18),
-            PaddingBottom = UDim.new(0, 18),
-            PaddingLeft = UDim.new(0, 18),
-            PaddingRight = UDim.new(0, 18),
-            Parent = banner,
-        })
-        local bTitle = Create("TextLabel", {
-            Size = UDim2.new(1, 0, 0, 24),
-            BackgroundTransparency = 1,
-            RichText = true,
-            Text = "✨ Welcome back, <font color='#" .. T.Accent:ToHex() .. "'>" .. LocalPlayer.DisplayName .. "</font>!",
-            Font = T.FontBold,
-            TextSize = 20,
-            TextColor3 = T.Text,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            Parent = banner,
-        })
-        local bGrad2 = Create("UIGradient", {
-            Color = ColorSequence.new({
-                ColorSequenceKeypoint.new(0, T.Accent),
-                ColorSequenceKeypoint.new(1, T.Accent2),
-            }),
-            Parent = bTitle,
-        })
-        Create("TextLabel", {
-            Size = UDim2.new(1, 0, 0, 16),
-            BackgroundTransparency = 1,
-            Text = "Nebublox v" .. Nebublox.Version .. "  •  " .. GetExecutorName() .. "  •  RightShift to toggle",
-            Font = T.Font,
-            TextSize = 12,
-            TextColor3 = T.TextDim,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            Parent = banner,
-        })
-
-        -- stats grid
-        local grid = Create("Frame", {
-            Size = UDim2.new(1, 0, 0, 0),
-            AutomaticSize = Enum.AutomaticSize.Y,
-            BackgroundTransparency = 1,
-            Parent = tab.Page,
-        })
-        local gridLayout = Create("UIGridLayout", {
-            CellSize = UDim2.new(0.5, -6, 0, 74),
-            CellPadding = UDim2.new(0, 12, 0, 12),
-            SortOrder = Enum.SortOrder.LayoutOrder,
-            Parent = grid,
-        })
-        local function StatCard(icon, label, getOrder)
-            local card = Create("Frame", {
-                BackgroundColor3 = T.Card,
-                Parent = grid,
-            })
-            Round(card, 12)
-            Stroke(card, T.Stroke, 1, 0.5)
-            Create("TextLabel", {
-                Size = UDim2.new(0, 26, 0, 26),
-                Position = UDim2.new(0, 14, 0, 12),
-                BackgroundTransparency = 1,
-                Text = icon,
-                TextSize = 18,
-                Parent = card,
-            })
-            Create("TextLabel", {
-                Size = UDim2.new(1, -58, 0, 14),
-                Position = UDim2.new(0, 48, 0, 12),
-                BackgroundTransparency = 1,
-                Text = label,
-                Font = T.Font,
-                TextSize = 11,
-                TextColor3 = T.TextDim,
-                TextXAlignment = Enum.TextXAlignment.Left,
-                Parent = card,
-            })
-            local value = Create("TextLabel", {
-                Size = UDim2.new(1, -58, 0, 20),
-                Position = UDim2.new(0, 48, 0, 30),
-                BackgroundTransparency = 1,
-                Text = "...",
-                Font = T.FontBold,
-                TextSize = 14,
-                TextColor3 = T.Text,
-                TextXAlignment = Enum.TextXAlignment.Left,
-                TextTruncate = Enum.TextTruncate.AtEnd,
-                Parent = card,
-            })
-            return value
-        end
-        local gameVal    = StatCard("🎮", "GAME")
-        local serverVal  = StatCard("🌐", "SERVER")
-        local playersVal = StatCard("👥", "PLAYERS")
-        local fpsVal     = StatCard("⚡", "FPS")
-
-        -- performance graph
-        local graphCard = Create("Frame", {
-            Size = UDim2.new(1, 0, 0, 150),
-            BackgroundColor3 = T.Card,
-            Parent = tab.Page,
-        })
-        Round(graphCard, 12)
-        Stroke(graphCard, T.Stroke, 1, 0.5)
-        Create("TextLabel", {
-            Size = UDim2.new(1, -24, 0, 16),
-            Position = UDim2.new(0, 14, 0, 10),
-            BackgroundTransparency = 1,
-            Text = "📊 PERFORMANCE",
-            Font = T.FontBold,
-            TextSize = 12,
-            TextColor3 = T.TextDim,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            Parent = graphCard,
-        })
-        local graphArea = Create("Frame", {
-            Size = UDim2.new(1, -28, 1, -52),
-            Position = UDim2.new(0, 14, 0, 34),
-            BackgroundColor3 = T.Sidebar,
-            BorderSizePixel = 0,
-            ClipsDescendants = true,
-            Parent = graphCard,
-        })
-        Round(graphArea, 8)
-        local bars = {}
-        local BAR_COUNT = 60
-        for i = 1, BAR_COUNT do
-            local bar = Create("Frame", {
-                Size = UDim2.new(1 / BAR_COUNT, -1.5, 0, 4),
-                Position = UDim2.new((i - 1) / BAR_COUNT, 0, 1, -4),
-                AnchorPoint = Vector2.new(0, 1),
-                BackgroundColor3 = T.Accent,
-                BackgroundTransparency = 0.3,
-                BorderSizePixel = 0,
-                Parent = graphArea,
-            })
-            Round(bar, 1)
-            bars[i] = bar
-        end
-
-        -- live updater
-        task.spawn(function()
-            local gameId = ""
-            pcall(function() gameId = game.Name end)
-            if gameId == "" then gameId = "Place " .. tostring(game.PlaceId) end
-            local jobText = (game.JobId ~= "") and game.JobId:sub(1, 8) .. "…" or "Private"
-            while tab.Page and tab.Page.Parent do
-                pcall(function()
-                    gameVal.Text = gameId
-                    serverVal.Text = jobText
-                    playersVal.Text = tostring(#Players:GetPlayers()) .. " / " .. tostring(Players.MaxPlayers)
-                    fpsVal.Text = tostring(FPS.value) .. " FPS"
-                    -- graph
-                    local areaH = graphArea.AbsoluteSize.Y - 8
-                    local n = #FPS.history
-                    for i = 1, BAR_COUNT do
-                        local idx = n - BAR_COUNT + i
-                        local fps = idx > 0 and FPS.history[idx] or nil
-                        local h = fps and math.clamp(fps / 120, 0.04, 1) * areaH or 4
-                        bars[i].Size = UDim2.new(1 / BAR_COUNT, -1.5, 0, h)
-                        if fps then
-                            if fps >= 45 then
-                                bars[i].BackgroundColor3 = T.Success
-                            elseif fps >= 25 then
-                                bars[i].BackgroundColor3 = T.Warning
-                            else
-                                bars[i].BackgroundColor3 = T.Error
-                            end
-                        end
-                    end
-                end)
-                task.wait(0.5)
-            end
-        end)
-    end
-
-    function self:Destroy()
-        pcall(function() ScreenGui:Destroy() end)
-        pcall(function() Nebublox.NotifGui:Destroy() end)
-        for _, c in ipairs(Nebublox.Conns) do
-            pcall(function() c:Disconnect() end)
-        end
-        table.clear(Nebublox.Conns)
-        CurrentWindow = nil
-    end
-
-    -- register component builders on tab
-    Nebublox._AttachComponents(self)
-
-    CurrentWindow = self
-    return self
-end
-
--- ==================================================================
---  COMPONENTS (attached to every tab)
--- ==================================================================
-function Nebublox._AttachComponents(win)
-
-    local function GetCard(tab)
-        if tab.CurrentCard then return tab.CurrentCard.Holder end
-        -- auto-create default card
-        return nil
-    end
-
-    local function NewCard(tab, title)
-        tab.ElementOrder = tab.ElementOrder + 1
-        local card = Create("Frame", {
-            Size = UDim2.new(1, 0, 0, 0),
-            AutomaticSize = Enum.AutomaticSize.Y,
-            BackgroundColor3 = T.Card,
-            LayoutOrder = tab.ElementOrder,
-            Parent = tab.Page,
-        })
-        Round(card, 12)
-        Stroke(card, T.Stroke, 1, 0.5)
-        if title and title ~= "" then
-            Create("TextLabel", {
-                Size = UDim2.new(1, -28, 0, 16),
-                Position = UDim2.new(0, 14, 0, 12),
-                BackgroundTransparency = 1,
-                Text = title,
-                Font = T.FontBold,
-                TextSize = 12,
-                TextColor3 = T.Accent,
-                TextXAlignment = Enum.TextXAlignment.Left,
-                Parent = card,
-            })
-        end
-        local holder = Create("Frame", {
-            Size = UDim2.new(1, 0, 0, 0),
-            AutomaticSize = Enum.AutomaticSize.Y,
-            BackgroundTransparency = 1,
-            Parent = card,
-        })
-        local topPad = (title and title ~= "") and 34 or 8
-        Create("UIPadding", {
-            PaddingTop = UDim.new(0, topPad),
-            PaddingBottom = UDim.new(0, 8),
-            PaddingLeft = UDim.new(0, 10),
-            PaddingRight = UDim.new(0, 10),
-            Parent = holder,
-        })
-        Create("UIListLayout", {
-            Padding = UDim.new(0, 8),
-            SortOrder = Enum.SortOrder.LayoutOrder,
-            Parent = holder,
-        })
-        local cardObj = { Card = card, Holder = holder }
-        tab.CurrentCard = cardObj
-        return cardObj
-    end
-
-    local function GetHolder(tab)
-        if tab.CurrentCard then
-            return tab.CurrentCard.Holder
-        end
-        return NewCard(tab, "").Holder
-    end
-
-    local function NextOrder(tab)
-        tab.ElementOrder = tab.ElementOrder + 1
-        return tab.ElementOrder
-    end
-
-    -- ============ SECTION ============
-    function win:CreateSection(tab, name)
-        NewCard(tab, name or "")
-    end
-
-    -- ============ LABEL ============
-    function win:CreateLabel(tab, text)
-        local l = Create("TextLabel", {
-            Size = UDim2.new(1, 0, 0, 0),
-            AutomaticSize = Enum.AutomaticSize.Y,
-            BackgroundTransparency = 1,
-            Text = text or "",
-            Font = T.Font,
-            TextSize = 13,
-            TextColor3 = T.TextDim,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            TextWrapped = true,
-            LayoutOrder = NextOrder(tab),
-            Parent = GetHolder(tab),
-        })
-        return l
-    end
-
-    -- ============ PARAGRAPH ============
-    function win:CreateParagraph(tab, data)
-        data = data or {}
-        local holder = Create("Frame", {
-            Size = UDim2.new(1, 0, 0, 0),
-            AutomaticSize = Enum.AutomaticSize.Y,
-            BackgroundColor3 = T.Surface,
-            LayoutOrder = NextOrder(tab),
-            Parent = GetHolder(tab),
-        })
-        Round(holder, 8)
-        Create("UIPadding", {
-            PaddingTop = UDim.new(0, 10),
-            PaddingBottom = UDim.new(0, 10),
-            PaddingLeft = UDim.new(0, 12),
-            PaddingRight = UDim.new(0, 12),
-            Parent = holder,
-        })
-        Create("UIListLayout", { Padding = UDim.new(0, 4), Parent = holder })
-        Create("TextLabel", {
-            Size = UDim2.new(1, 0, 0, 16),
-            BackgroundTransparency = 1,
-            Text = data.Title or "",
-            Font = T.FontBold,
-            TextSize = 13,
-            TextColor3 = T.Text,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            Parent = holder,
-        })
-        local content = Create("TextLabel", {
-            Size = UDim2.new(1, 0, 0, 0),
-            AutomaticSize = Enum.AutomaticSize.Y,
-            BackgroundTransparency = 1,
-            Text = data.Content or "",
-            Font = T.Font,
-            TextSize = 12,
-            TextColor3 = T.TextDim,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            TextYAlignment = Enum.TextYAlignment.Top,
-            TextWrapped = true,
-            Parent = holder,
-        })
-        return { Set = function(_, d) pcall(function()
-            content.Text = (d and d.Content) or content.Text
-        end) end }
-    end
-
-    -- ============ BUTTON ============
-    function win:CreateButton(tab, data)
-        data = data or {}
-        local name = data.Name or "Button"
-        local btn = Create("TextButton", {
-            Size = UDim2.new(1, 0, 0, 42),
-            BackgroundColor3 = T.SurfaceLight,
-            Text = "",
-            AutoButtonColor = false,
-            LayoutOrder = NextOrder(tab),
-            Parent = GetHolder(tab),
-        })
-        Round(btn, 8)
-        Stroke(btn, T.Accent2, 1, 0.6)
-        Create("TextLabel", {
-            Size = UDim2.new(1, -20, 1, 0),
-            Position = UDim2.new(0, 10, 0, 0),
-            BackgroundTransparency = 1,
-            Text = name,
-            Font = T.FontBold,
-            TextSize = 13,
-            TextColor3 = T.Text,
-            Parent = btn,
-        })
-        btn.MouseEnter:Connect(function() Tween(btn, { BackgroundColor3 = T.Card }, 0.15) end)
-        btn.MouseLeave:Connect(function() Tween(btn, { BackgroundColor3 = T.SurfaceLight }, 0.15) end)
-        btn.MouseButton1Click:Connect(function()
-            Tween(btn, { BackgroundColor3 = T.Accent2 }, 0.08)
-            task.delay(0.1, function() Tween(btn, { BackgroundColor3 = T.SurfaceLight }, 0.2) end)
-            Fire(data.Callback)
-        end)
-        return btn
-    end
-
-    -- ============ TOGGLE ============
-    function win:CreateToggle(tab, data)
-        data = data or {}
-        local name = data.Name or "Toggle"
-        local currentValue = data.CurrentValue or false
-        local flag = data.Flag
-
-        local row = Create("TextButton", {
-            Size = UDim2.new(1, 0, 0, 40),
-            BackgroundColor3 = T.Surface,
-            Text = "",
-            AutoButtonColor = false,
-            LayoutOrder = NextOrder(tab),
-            Parent = GetHolder(tab),
-        })
-        Round(row, 8)
-        Create("TextLabel", {
-            Size = UDim2.new(1, -70, 1, 0),
-            Position = UDim2.new(0, 12, 0, 0),
-            BackgroundTransparency = 1,
-            Text = name,
-            Font = T.Font,
-            TextSize = 13,
-            TextColor3 = T.Text,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            Parent = row,
-        })
-        -- switch
-        local switch = Create("Frame", {
-            Size = UDim2.new(0, 42, 0, 22),
-            Position = UDim2.new(1, -12, 0.5, 0),
-            AnchorPoint = Vector2.new(1, 0.5),
-            BackgroundColor3 = T.SurfaceLight,
-            BorderSizePixel = 0,
-            Parent = row,
-        })
-        Round(switch, 11)
-        local switchStroke = Stroke(switch, T.Stroke, 1, 0.3)
-        local knob = Create("Frame", {
-            Size = UDim2.new(0, 16, 0, 16),
-            Position = UDim2.new(0, 3, 0.5, 0),
-            AnchorPoint = Vector2.new(0, 0.5),
-            BackgroundColor3 = T.TextDim,
-            BorderSizePixel = 0,
-            Parent = switch,
-        })
-        Round(knob, 8)
-
-        local el = { Type = "Toggle" }
-        local function render(v, silent)
-            currentValue = v
-            if v then
-                Tween(switch, { BackgroundColor3 = T.Accent2 }, 0.2)
-                Tween(knob, { Position = UDim2.new(1, -19, 0.5, 0), BackgroundColor3 = T.Text }, 0.2)
-                switchStroke.Color = T.Accent
-            else
-                Tween(switch, { BackgroundColor3 = T.SurfaceLight }, 0.2)
-                Tween(knob, { Position = UDim2.new(0, 3, 0.5, 0), BackgroundColor3 = T.TextDim }, 0.2)
-                switchStroke.Color = T.Stroke
-            end
-            if not silent then Fire(data.Callback, v) end
-        end
-
-        function el.Set(_, v, silent) render(v == true, silent) end
-        function el.Get() return currentValue end
-        if flag then Nebublox.Flags[flag] = el end
-
-        row.MouseButton1Click:Connect(function()
-            render(not currentValue)
-        end)
-        render(currentValue, true)
-        return el
-    end
-
-    -- ============ SLIDER ============
-    function win:CreateSlider(tab, data)
-        data = data or {}
-        local name = data.Name or "Slider"
-        local min = data.Min or data.Range and data.Range[1] or 0
-        local max = data.Max or data.Range and data.Range[2] or 100
-        local increment = data.Increment or 1
-        local suffix = data.Suffix or ""
-        local flag = data.Flag
-        local currentValue = data.CurrentValue or min
-
-        local holder = Create("Frame", {
-            Size = UDim2.new(1, 0, 0, 56),
-            BackgroundColor3 = T.Surface,
-            LayoutOrder = NextOrder(tab),
-            Parent = GetHolder(tab),
-        })
-        Round(holder, 8)
-        Create("TextLabel", {
-            Size = UDim2.new(1, -90, 0, 16),
-            Position = UDim2.new(0, 12, 0, 8),
-            BackgroundTransparency = 1,
-            Text = name,
-            Font = T.Font,
-            TextSize = 13,
-            TextColor3 = T.Text,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            Parent = holder,
-        })
-        local valueLabel = Create("TextLabel", {
-            Size = UDim2.new(0, 76, 0, 16),
-            Position = UDim2.new(1, -12, 0, 8),
-            AnchorPoint = Vector2.new(1, 0),
-            BackgroundTransparency = 1,
-            Text = tostring(currentValue) .. suffix,
-            Font = T.FontBold,
-            TextSize = 12,
-            TextColor3 = T.Accent,
-            TextXAlignment = Enum.TextXAlignment.Right,
-            Parent = holder,
-        })
-        local track = Create("Frame", {
-            Size = UDim2.new(1, -24, 0, 6),
-            Position = UDim2.new(0, 12, 0, 38),
-            BackgroundColor3 = T.Sidebar,
-            BorderSizePixel = 0,
-            Parent = holder,
-        })
-        Round(track, 3)
-        local fill = Create("Frame", {
-            Size = UDim2.new(0, 0, 1, 0),
-            BackgroundColor3 = T.Accent,
-            BorderSizePixel = 0,
-            Parent = track,
-        })
-        Round(fill, 3)
-        local knob = Create("Frame", {
-            Size = UDim2.new(0, 14, 0, 14),
-            Position = UDim2.new(0, 0, 0.5, 0),
-            AnchorPoint = Vector2.new(0, 0.5),
-            BackgroundColor3 = T.Text,
-            BorderSizePixel = 0,
-            Parent = track,
-        })
-        Round(knob, 7)
-
-        local el = { Type = "Slider" }
-        local function render(v, silent)
-            v = math.clamp(v, min, max)
-            v = math.floor(v / increment + 0.5) * increment
-            currentValue = v
-            local rel = (max - min) == 0 and 0 or (v - min) / (max - min)
-            fill.Size = UDim2.new(rel, 0, 1, 0)
-            knob.Position = UDim2.new(rel, 0, 0.5, 0)
-            valueLabel.Text = tostring(v) .. suffix
-            if not silent then Fire(data.Callback, v) end
-        end
-
-        function el.Set(_, v, silent) render(tonumber(v) or min, silent) end
-        function el.Get() return currentValue end
-        if flag then Nebublox.Flags[flag] = el end
-
-        local dragging = false
-        local function fromX(x)
-            local rel = math.clamp((x - track.AbsolutePosition.X) / math.max(track.AbsoluteSize.X, 1), 0, 1)
-            render(min + (max - min) * rel)
-        end
-        track.InputBegan:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.MouseButton1
-                or input.UserInputType == Enum.UserInputType.Touch then
-                dragging = true
-                fromX(input.Position.X)
-            end
-        end)
-        Track(UserInputService.InputChanged:Connect(function(input)
-            if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
-                or input.UserInputType == Enum.UserInputType.Touch) then
-                fromX(input.Position.X)
-            end
-        end))
-        Track(UserInputService.InputEnded:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.MouseButton1
-                or input.UserInputType == Enum.UserInputType.Touch then
-                dragging = false
-            end
-        end))
-        render(currentValue, true)
-        return el
-    end
-
-    -- ============ DROPDOWN ============
-    function win:CreateDropdown(tab, data)
-        data = data or {}
-        local name = data.Name or "Dropdown"
-        local options = data.Options or {}
-        local flag = data.Flag
-        local callback = data.Callback
-        local current = data.CurrentOption or (options[1] ~= nil and options[1] or nil)
-
-        local holder = Create("Frame", {
-            Size = UDim2.new(1, 0, 0, 0),
-            AutomaticSize = Enum.AutomaticSize.Y,
-            BackgroundColor3 = T.Surface,
-            ClipsDescendants = true,
-            LayoutOrder = NextOrder(tab),
-            Parent = GetHolder(tab),
-        })
-        Round(holder, 8)
-        local listLayout = Create("UIListLayout", {
-            Padding = UDim.new(0, 2),
-            SortOrder = Enum.SortOrder.LayoutOrder,
-            Parent = holder,
-        })
-        local btn = Create("TextButton", {
-            Size = UDim2.new(1, 0, 0, 40),
-            BackgroundTransparency = 1,
-            Text = "",
-            AutoButtonColor = false,
-            LayoutOrder = 1,
-            Parent = holder,
-        })
-        Create("TextLabel", {
-            Size = UDim2.new(1, -70, 0, 16),
-            Position = UDim2.new(0, 12, 0, 5),
-            BackgroundTransparency = 1,
-            Text = name,
-            Font = T.Font,
-            TextSize = 12,
-            TextColor3 = T.TextDim,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            Parent = btn,
-        })
-        local valueLabel = Create("TextLabel", {
-            Size = UDim2.new(1, -40, 0, 14),
-            Position = UDim2.new(0, 12, 0, 21),
-            BackgroundTransparency = 1,
-            Text = current and tostring(current) or "—",
-            Font = T.FontBold,
-            TextSize = 13,
-            TextColor3 = T.Accent,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            TextTruncate = Enum.TextTruncate.AtEnd,
-            Parent = btn,
-        })
-        local arrow = Create("TextLabel", {
-            Size = UDim2.new(0, 20, 1, 0),
-            Position = UDim2.new(1, -26, 0, 0),
-            BackgroundTransparency = 1,
-            Text = "▾",
-            TextSize = 14,
-            TextColor3 = T.TextDim,
-            Parent = btn,
-        })
-        local optionsHolder = Create("Frame", {
-            Size = UDim2.new(1, 0, 0, 0),
-            AutomaticSize = Enum.AutomaticSize.Y,
-            BackgroundTransparency = 1,
-            Visible = false,
-            LayoutOrder = 2,
-            Parent = holder,
-        })
-        Create("UIListLayout", { Padding = UDim.new(0, 2), Parent = optionsHolder })
-
-        local el = { Type = "Dropdown" }
-        local open = false
-        local optionButtons = {}
-
-        local function setOpen(v)
-            open = v
-            optionsHolder.Visible = v
-            arrow.Text = v and "▴" or "▾"
-            Tween(holder, { BackgroundColor3 = v and T.SurfaceLight or T.Surface }, 0.15)
-        end
-
-        local function select(opt, silent)
-            current = opt
-            valueLabel.Text = opt and tostring(opt) or "—"
-            for o, lbl in pairs(optionButtons) do
-                lbl.TextColor3 = (o == opt) and T.Accent or T.TextDim
-            end
-            if not silent then Fire(callback, opt) end
-        end
-
-        function el.Set(_, v, silent)
-            if v ~= nil then select(v, silent) end
-        end
-        function el.Get() return current end
-        function el.Refresh(newOptions)
-            options = newOptions or {}
-            for _, b in pairs(optionButtons) do
-                pcall(function() b.Parent:Destroy() end)
-            end
-            optionButtons = {}
-            for _, opt in ipairs(options) do
-                local obtn = Create("TextButton", {
-                    Size = UDim2.new(1, 0, 0, 28),
-                    BackgroundColor3 = T.Sidebar,
-                    Text = "",
-                    AutoButtonColor = false,
-                    Parent = optionsHolder,
-                })
-                Round(obtn, 6)
-                local olbl = Create("TextLabel", {
-                    Size = UDim2.new(1, -20, 1, 0),
-                    Position = UDim2.new(0, 10, 0, 0),
-                    BackgroundTransparency = 1,
-                    Text = tostring(opt),
-                    Font = T.Font,
-                    TextSize = 12,
-                    TextColor3 = (opt == current) and T.Accent or T.TextDim,
-                    TextXAlignment = Enum.TextXAlignment.Left,
-                    TextTruncate = Enum.TextTruncate.AtEnd,
-                    Parent = obtn,
-                })
-                optionButtons[opt] = olbl
-                obtn.MouseButton1Click:Connect(function()
-                    select(opt)
-                    setOpen(false)
-                end)
-            end
-        end
-
-        if flag then Nebublox.Flags[flag] = el end
-        btn.MouseButton1Click:Connect(function() setOpen(not open) end)
-        el.Refresh(options)
-        if current then select(current, true) end
-        return el
-    end
-
-    -- ============ TEXTBOX ============
-    function win:CreateTextBox(tab, data)
-        data = data or {}
-        local name = data.Name or "Input"
-        local flag = data.Flag
-
-        local holder = Create("Frame", {
-            Size = UDim2.new(1, 0, 0, 66),
-            BackgroundColor3 = T.Surface,
-            LayoutOrder = NextOrder(tab),
-            Parent = GetHolder(tab),
-        })
-        Round(holder, 8)
-        Create("TextLabel", {
-            Size = UDim2.new(1, -24, 0, 14),
-            Position = UDim2.new(0, 12, 0, 8),
-            BackgroundTransparency = 1,
-            Text = name,
-            Font = T.Font,
-            TextSize = 12,
-            TextColor3 = T.TextDim,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            Parent = holder,
-        })
-        local box = Create("TextBox", {
-            Size = UDim2.new(1, -24, 0, 32),
-            Position = UDim2.new(0, 12, 0, 26),
-            BackgroundColor3 = T.Sidebar,
-            Text = data.Text or "",
-            PlaceholderText = data.PlaceholderText or "Type here...",
-            PlaceholderColor3 = T.TextDim,
-            TextColor3 = T.Text,
-            Font = T.Font,
-            TextSize = 13,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            ClearTextOnFocus = false,
-            ClipsDescendants = true,
-            Parent = holder,
-        })
-        Round(box, 6)
-        Stroke(box, T.Stroke, 1, 0.5)
-
-        local el = { Type = "TextBox" }
-        function el.Set(_, v, silent)
-            box.Text = tostring(v or "")
-            if not silent then Fire(data.Callback, box.Text) end
-        end
-        function el.Get() return box.Text end
-        if flag then Nebublox.Flags[flag] = el end
-        box.FocusLost:Connect(function(enter)
-            Fire(data.Callback, box.Text, enter)
-        end)
-        return el
-    end
-
-    -- compat wrappers (Tab:CreateX instead of Window:CreateX(tab, ...))
-    for _, comp in ipairs({ "Section", "Label", "Paragraph", "Button", "Toggle", "Slider", "Dropdown", "TextBox" }) do
-        local fn = win["Create" .. comp]
-        win["Create" .. comp] = nil -- keep only tab-method version below
-    end
-end
-
--- attach Tab:CreateX methods (called with tab as self)
-do
-    local comps = { "Section", "Label", "Paragraph", "Button", "Toggle", "Slider", "Dropdown", "TextBox" }
-    -- we patch CreateTab-created tab objects inside _AttachComponents via win table;
-    -- easiest: store component functions on Nebublox._ComponentHost and set them per-tab
-end
-
--- Actually — simplest robust approach: patch tab metatable so Tab:CreateToggle(...) calls win:CreateToggle(tab, ...)
-do
-    local TabMT = {}
-    TabMT.__index = function(tab, key)
-        local comp = key:match("^Create(%w+)$")
-        if comp and CurrentWindow and CurrentWindow["Create" .. comp] then
-            return function(_, ...)
-                return CurrentWindow["Create" .. comp](CurrentWindow, tab, ...)
-            end
-        end
-        return nil
-    end
-    -- apply to every tab created:
-    local oldAttach = Nebublox._AttachComponents
-    -- (tabs already get methods via lookup on the window; we instead give each tab its own methods)
-end
-
--- Simpler final wiring: give every tab direct method closures.
--- (Done inside CreateTab below via Nebublox._WireTab)
-function Nebublox._WireTab(win, tab)
-    for _, comp in ipairs({ "Section", "Label", "Paragraph", "Button", "Toggle", "Slider", "Dropdown", "TextBox" }) do
-        local fnName = "Create" .. comp
-        tab[fnName] = function(data, a, b, c)
-            return win[fnName](win, tab, data, a, b, c)
-        end
-    end
-end
-
--- hook: patch CreateTab to wire tab
-do
-    local rawCreateWindow = Nebublox.CreateWindow
-end
-
--- ==================================================================
---  KEYBIND (RightShift) + PARENT + INIT
--- ==================================================================
-pcall(function() ScreenGui.Parent = GetParent() end)
-
-Track(UserInputService.InputBegan:Connect(function(input, gpe)
-    if gpe then return end
-    if input.KeyCode == Nebublox.UIKeybind then
-        ScreenGui.Enabled = not ScreenGui.Enabled
-    end
-end))
-
--- patch CreateTab to wire Tab:CreateX sugar
-do
-    -- wrap window creation so tabs get direct methods
-    local origCreateWindow = Nebublox.CreateWindow
-    function Nebublox:CreateWindow(cfg)
-        local win = origCreateWindow(self, cfg)
-        -- re-wrap CreateTab
-        local origCreateTab = win.CreateTab
-        function win:CreateTab(name, icon)
-            local tab = origCreateTab(win, name, icon)
-            Nebublox._WireTab(win, tab)
-            return tab
-        end
-        return win
-    end
-end
-
--- ==================================================================
---  CONFIG SAVE / LOAD
+--  CONFIG SYSTEM
 -- ==================================================================
 local function SafeName(n)
     n = tostring(n or "default"):gsub("[^%w_%- ]", "")
@@ -1599,10 +412,1904 @@ function Nebublox:LoadConfig(fileName)
     return true
 end
 
-function Nebublox:Destroy()
+function Nebublox:ServerHop()
+    task.spawn(function()
+        local url = "https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"
+        local ok, result = pcall(function() return HttpService:JSONDecode(game:HttpGet(url)) end)
+        if ok and result and result.data then
+            local servers = {}
+            for _, server in ipairs(result.data) do
+                if type(server) == "table" and server.playing and server.maxPlayers
+                    and server.playing < server.maxPlayers and server.id ~= game.JobId then
+                    table.insert(servers, server.id)
+                end
+            end
+            if #servers > 0 then
+                TeleportService:TeleportToPlaceInstance(game.PlaceId, servers[math.random(1, #servers)], LocalPlayer)
+                return
+            end
+        end
+        TeleportService:Teleport(game.PlaceId, LocalPlayer)
+    end)
+end
+
+-- ==================================================================
+--  COMPONENT BUILDERS (defined BEFORE window — clean, no magic)
+-- ==================================================================
+local function NewCard(tab, title)
+    tab.order = tab.order + 1
+    local card = Create("Frame", {
+        Size = UDim2.new(1, 0, 0, 0),
+        AutomaticSize = Enum.AutomaticSize.Y,
+        BackgroundColor3 = T.Card,
+        LayoutOrder = tab.order,
+        Parent = tab.Page,
+    })
+    Round(card, 12)
+    Stroke(card, T.Stroke, 1, 0.45)
+    if title and title ~= "" then
+        local t = Create("TextLabel", {
+            Size = UDim2.new(1, -28, 0, 16),
+            Position = UDim2.new(0, 14, 0, 12),
+            BackgroundTransparency = 1,
+            Text = title,
+            Font = T.FontBold,
+            TextSize = 12,
+            TextColor3 = T.Accent,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            Parent = card,
+        })
+        AddTextStroke(t)
+    end
+    local holder = Create("Frame", {
+        Size = UDim2.new(1, 0, 0, 0),
+        AutomaticSize = Enum.AutomaticSize.Y,
+        BackgroundTransparency = 1,
+        Parent = card,
+    })
+    local topPad = (title and title ~= "") and 34 or 6
+    Create("UIPadding", {
+        PaddingTop = UDim.new(0, topPad),
+        PaddingBottom = UDim.new(0, 8),
+        PaddingLeft = UDim.new(0, 10),
+        PaddingRight = UDim.new(0, 10),
+        Parent = holder,
+    })
+    Create("UIListLayout", {
+        Padding = UDim.new(0, 8),
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Parent = holder,
+    })
+    tab.currentCard = holder
+    return holder
+end
+
+local function GetHolder(tab)
+    if tab.currentCard then return tab.currentCard end
+    return NewCard(tab, "")
+end
+
+local function NextOrder(tab)
+    tab.order = tab.order + 1
+    return tab.order
+end
+
+-- ---------- SECTION ----------
+local function CompSection(tab, data)
+    NewCard(tab, (type(data) == "string" and data) or (data and data.Name) or "")
+end
+
+-- ---------- LABEL ----------
+local function CompLabel(tab, data)
+    local text = type(data) == "string" and data or (data and data.Text) or ""
+    local l = Create("TextLabel", {
+        Size = UDim2.new(1, 0, 0, 0),
+        AutomaticSize = Enum.AutomaticSize.Y,
+        BackgroundTransparency = 1,
+        Text = text,
+        Font = T.Font,
+        TextSize = 13,
+        TextColor3 = T.TextDim,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextWrapped = true,
+        LayoutOrder = NextOrder(tab),
+        Parent = GetHolder(tab),
+    })
+    AddTextStroke(l)
+    return { Set = function(_, d) pcall(function() l.Text = d or l.Text end) end }
+end
+
+-- ---------- PARAGRAPH ----------
+local function CompParagraph(tab, data)
+    data = data or {}
+    local holder = Create("Frame", {
+        Size = UDim2.new(1, 0, 0, 0),
+        AutomaticSize = Enum.AutomaticSize.Y,
+        BackgroundColor3 = T.Surface,
+        BackgroundTransparency = T.Glass,
+        LayoutOrder = NextOrder(tab),
+        Parent = GetHolder(tab),
+    })
+    Round(holder, 8)
+    Create("UIPadding", {
+        PaddingTop = UDim.new(0, 10),
+        PaddingBottom = UDim.new(0, 10),
+        PaddingLeft = UDim.new(0, 12),
+        PaddingRight = UDim.new(0, 12),
+        Parent = holder,
+    })
+    Create("UIListLayout", { Padding = UDim.new(0, 4), Parent = holder })
+    local t = Create("TextLabel", {
+        Size = UDim2.new(1, 0, 0, 16),
+        BackgroundTransparency = 1,
+        Text = data.Title or "",
+        Font = T.FontBold,
+        TextSize = 13,
+        TextColor3 = T.Text,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = holder,
+    })
+    AddTextStroke(t)
+    local c = Create("TextLabel", {
+        Size = UDim2.new(1, 0, 0, 0),
+        AutomaticSize = Enum.AutomaticSize.Y,
+        BackgroundTransparency = 1,
+        Text = data.Content or "",
+        Font = T.Font,
+        TextSize = 12,
+        TextColor3 = T.TextDim,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextYAlignment = Enum.TextYAlignment.Top,
+        TextWrapped = true,
+        Parent = holder,
+    })
+    AddTextStroke(c)
+    return { Set = function(_, d)
+        pcall(function()
+            if d and d.Title then t.Text = d.Title end
+            if d and d.Content then c.Text = d.Content end
+        end)
+    end }
+end
+
+-- ---------- BUTTON ----------
+local function CompButton(tab, data)
+    data = data or {}
+    local name = data.Name or "Button"
+    local btn = Create("TextButton", {
+        Size = UDim2.new(1, 0, 0, 42),
+        BackgroundColor3 = T.SurfaceLight,
+        BackgroundTransparency = T.Glass,
+        Text = "",
+        AutoButtonColor = false,
+        LayoutOrder = NextOrder(tab),
+        Parent = GetHolder(tab),
+    })
+    Round(btn, 8)
+    Stroke(btn, T.Accent2, 1, 0.6)
+    local l = Create("TextLabel", {
+        Size = UDim2.new(1, -20, 1, 0),
+        Position = UDim2.new(0, 10, 0, 0),
+        BackgroundTransparency = 1,
+        Text = name,
+        Font = T.FontBold,
+        TextSize = 13,
+        TextColor3 = T.Text,
+        Parent = btn,
+    })
+    AddTextStroke(l)
+    btn.MouseEnter:Connect(function() Tween(btn, { BackgroundTransparency = 0 }, 0.15) end)
+    btn.MouseLeave:Connect(function() Tween(btn, { BackgroundTransparency = T.Glass }, 0.15) end)
+    btn.MouseButton1Click:Connect(function()
+        Tween(btn, { BackgroundColor3 = T.Accent2 }, 0.08)
+        task.delay(0.12, function() Tween(btn, { BackgroundColor3 = T.SurfaceLight }, 0.25) end)
+        Fire(data.Callback)
+    end)
+    return btn
+end
+
+-- ---------- TOGGLE ----------
+local function CompToggle(tab, data)
+    data = data or {}
+    local currentValue = data.CurrentValue == true
+    local flag = data.Flag
+
+    local row = Create("TextButton", {
+        Size = UDim2.new(1, 0, 0, 42),
+        BackgroundColor3 = T.Surface,
+        BackgroundTransparency = T.Glass,
+        Text = "",
+        AutoButtonColor = false,
+        LayoutOrder = NextOrder(tab),
+        Parent = GetHolder(tab),
+    })
+    Round(row, 8)
+    local l = Create("TextLabel", {
+        Size = UDim2.new(1, -70, 1, 0),
+        Position = UDim2.new(0, 12, 0, 0),
+        BackgroundTransparency = 1,
+        Text = data.Name or "Toggle",
+        Font = T.Font,
+        TextSize = 13,
+        TextColor3 = T.Text,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = row,
+    })
+    AddTextStroke(l)
+
+    local switch = Create("Frame", {
+        Size = UDim2.new(0, 42, 0, 22),
+        Position = UDim2.new(1, -12, 0.5, 0),
+        AnchorPoint = Vector2.new(1, 0.5),
+        BackgroundColor3 = T.SurfaceLight,
+        BorderSizePixel = 0,
+        Parent = row,
+    })
+    Round(switch, 11)
+    local swStroke = Stroke(switch, T.Stroke, 1, 0.3)
+    local knob = Create("Frame", {
+        Size = UDim2.new(0, 16, 0, 16),
+        Position = UDim2.new(0, 3, 0.5, 0),
+        AnchorPoint = Vector2.new(0, 0.5),
+        BackgroundColor3 = T.TextDim,
+        BorderSizePixel = 0,
+        Parent = switch,
+    })
+    Round(knob, 8)
+
+    local el = { Type = "Toggle" }
+    local function render(v, silent)
+        currentValue = v
+        if v then
+            Tween(switch, { BackgroundColor3 = T.Accent2 }, 0.2)
+            Tween(knob, { Position = UDim2.new(1, -19, 0.5, 0), BackgroundColor3 = T.Text }, 0.2)
+            swStroke.Color = T.Accent
+        else
+            Tween(switch, { BackgroundColor3 = T.SurfaceLight }, 0.2)
+            Tween(knob, { Position = UDim2.new(0, 3, 0.5, 0), BackgroundColor3 = T.TextDim }, 0.2)
+            swStroke.Color = T.Stroke
+        end
+        if not silent then Fire(data.Callback, v) end
+    end
+
+    el.Set = function(_, v, silent) render(v == true, silent) end
+    el.Get = function() return currentValue end
+    if flag then Nebublox.Flags[flag] = el end
+
+    row.MouseButton1Click:Connect(function()
+        render(not currentValue)
+    end)
+    render(currentValue, true)
+    return el
+end
+
+-- ---------- SLIDER ----------
+local function CompSlider(tab, data)
+    data = data or {}
+    local range = data.Range or { data.Min or 0, data.Max or 100 }
+    local min, max = range[1] or 0, range[2] or 100
+    local increment = data.Increment or 1
+    local suffix = data.Suffix or ""
+    local flag = data.Flag
+    local currentValue = data.CurrentValue or min
+
+    local holder = Create("Frame", {
+        Size = UDim2.new(1, 0, 0, 58),
+        BackgroundColor3 = T.Surface,
+        BackgroundTransparency = T.Glass,
+        LayoutOrder = NextOrder(tab),
+        Parent = GetHolder(tab),
+    })
+    Round(holder, 8)
+    local l = Create("TextLabel", {
+        Size = UDim2.new(1, -90, 0, 16),
+        Position = UDim2.new(0, 12, 0, 8),
+        BackgroundTransparency = 1,
+        Text = data.Name or "Slider",
+        Font = T.Font,
+        TextSize = 13,
+        TextColor3 = T.Text,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = holder,
+    })
+    AddTextStroke(l)
+    local valueLabel = Create("TextLabel", {
+        Size = UDim2.new(0, 76, 0, 16),
+        Position = UDim2.new(1, -12, 0, 8),
+        AnchorPoint = Vector2.new(1, 0),
+        BackgroundTransparency = 1,
+        Text = tostring(currentValue) .. suffix,
+        Font = T.FontBold,
+        TextSize = 12,
+        TextColor3 = T.Accent,
+        TextXAlignment = Enum.TextXAlignment.Right,
+        Parent = holder,
+    })
+    AddTextStroke(valueLabel)
+    local track = Create("Frame", {
+        Size = UDim2.new(1, -24, 0, 6),
+        Position = UDim2.new(0, 12, 0, 38),
+        BackgroundColor3 = T.Sidebar,
+        BorderSizePixel = 0,
+        Parent = holder,
+    })
+    Round(track, 3)
+    local fill = Create("Frame", {
+        Size = UDim2.new(0, 0, 1, 0),
+        BackgroundColor3 = T.Accent,
+        BorderSizePixel = 0,
+        Parent = track,
+    })
+    Round(fill, 3)
+    local knob = Create("Frame", {
+        Size = UDim2.new(0, 14, 0, 14),
+        Position = UDim2.new(0, 0, 0.5, 0),
+        AnchorPoint = Vector2.new(0, 0.5),
+        BackgroundColor3 = T.Text,
+        BorderSizePixel = 0,
+        Parent = track,
+    })
+    Round(knob, 7)
+
+    local el = { Type = "Slider" }
+    local function render(v, silent)
+        v = tonumber(v) or min
+        v = math.clamp(v, min, max)
+        if increment and increment > 0 then
+            v = math.floor(v / increment + 0.5) * increment
+        end
+        currentValue = v
+        local rel = (max - min) == 0 and 0 or (v - min) / (max - min)
+        fill.Size = UDim2.new(rel, 0, 1, 0)
+        knob.Position = UDim2.new(rel, 0, 0.5, 0)
+        valueLabel.Text = tostring(v) .. suffix
+        if not silent then Fire(data.Callback, v) end
+    end
+
+    el.Set = function(_, v, silent) render(v, silent) end
+    el.Get = function() return currentValue end
+    if flag then Nebublox.Flags[flag] = el end
+
+    local dragging = false
+    local function fromX(x)
+        local rel = math.clamp((x - track.AbsolutePosition.X) / math.max(track.AbsoluteSize.X, 1), 0, 1)
+        render(min + (max - min) * rel)
+    end
+    track.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            fromX(input.Position.X)
+        end
+    end)
+    Track(UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+            or input.UserInputType == Enum.UserInputType.Touch) then
+            fromX(input.Position.X)
+        end
+    end))
+    Track(UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end))
+    render(currentValue, true)
+    return el
+end
+
+-- ---------- DROPDOWN ----------
+local function CompDropdown(tab, data)
+    data = data or {}
+    local options = data.Options or {}
+    local flag = data.Flag
+    local current = data.CurrentOption
+    if current == nil and options[1] ~= nil then current = options[1] end
+
+    local holder = Create("Frame", {
+        Size = UDim2.new(1, 0, 0, 0),
+        AutomaticSize = Enum.AutomaticSize.Y,
+        BackgroundColor3 = T.Surface,
+        BackgroundTransparency = T.Glass,
+        ClipsDescendants = true,
+        LayoutOrder = NextOrder(tab),
+        Parent = GetHolder(tab),
+    })
+    Round(holder, 8)
+    Create("UIListLayout", { Padding = UDim.new(0, 2), SortOrder = Enum.SortOrder.LayoutOrder, Parent = holder })
+
+    local btn = Create("TextButton", {
+        Size = UDim2.new(1, 0, 0, 42),
+        BackgroundTransparency = 1,
+        Text = "",
+        AutoButtonColor = false,
+        LayoutOrder = 1,
+        Parent = holder,
+    })
+    local l = Create("TextLabel", {
+        Size = UDim2.new(1, -70, 0, 15),
+        Position = UDim2.new(0, 12, 0, 5),
+        BackgroundTransparency = 1,
+        Text = data.Name or "Dropdown",
+        Font = T.Font,
+        TextSize = 12,
+        TextColor3 = T.TextDim,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = btn,
+    })
+    AddTextStroke(l)
+    local valueLabel = Create("TextLabel", {
+        Size = UDim2.new(1, -40, 0, 15),
+        Position = UDim2.new(0, 12, 0, 22),
+        BackgroundTransparency = 1,
+        Text = current ~= nil and tostring(current) or "—",
+        Font = T.FontBold,
+        TextSize = 13,
+        TextColor3 = T.Accent,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextTruncate = Enum.TextTruncate.AtEnd,
+        Parent = btn,
+    })
+    AddTextStroke(valueLabel)
+    local arrow = Create("TextLabel", {
+        Size = UDim2.new(0, 20, 1, 0),
+        Position = UDim2.new(1, -26, 0, 0),
+        BackgroundTransparency = 1,
+        Text = "▾",
+        TextSize = 14,
+        TextColor3 = T.TextDim,
+        Parent = btn,
+    })
+    local optionsHolder = Create("Frame", {
+        Size = UDim2.new(1, 0, 0, 0),
+        AutomaticSize = Enum.AutomaticSize.Y,
+        BackgroundTransparency = 1,
+        Visible = false,
+        LayoutOrder = 2,
+        Parent = holder,
+    })
+    Create("UIListLayout", { Padding = UDim.new(0, 2), Parent = optionsHolder })
+
+    local el = { Type = "Dropdown", OptionButtons = {} }
+    local open = false
+
+    local function setOpen(v)
+        open = v
+        optionsHolder.Visible = v
+        arrow.Text = v and "▴" or "▾"
+        Tween(holder, { BackgroundTransparency = v and 0 or T.Glass }, 0.15)
+    end
+
+    local function select(opt, silent)
+        current = opt
+        valueLabel.Text = opt ~= nil and tostring(opt) or "—"
+        for o, lbl in pairs(el.OptionButtons) do
+            lbl.TextColor3 = (o == opt) and T.Accent or T.TextDim
+        end
+        if not silent then Fire(data.Callback, opt) end
+    end
+
+    el.Set = function(_, v, silent)
+        if v ~= nil then select(v, silent) end
+    end
+    el.Get = function() return current end
+
+    function el.Refresh(newOptions)
+        options = newOptions or {}
+        for _, pairEntry in pairs(el.OptionButtons) do
+            -- nothing (buttons destroyed below via list)
+        end
+        for _, child in ipairs(optionsHolder:GetChildren()) do
+            if child:IsA("TextButton") then child:Destroy() end
+        end
+        el.OptionButtons = {}
+        for _, opt in ipairs(options) do
+            local obtn = Create("TextButton", {
+                Size = UDim2.new(1, 0, 0, 28),
+                BackgroundColor3 = T.Sidebar,
+                Text = "",
+                AutoButtonColor = false,
+                Parent = optionsHolder,
+            })
+            Round(obtn, 6)
+            local olbl = Create("TextLabel", {
+                Size = UDim2.new(1, -20, 1, 0),
+                Position = UDim2.new(0, 10, 0, 0),
+                BackgroundTransparency = 1,
+                Text = tostring(opt),
+                Font = T.Font,
+                TextSize = 12,
+                TextColor3 = (opt == current) and T.Accent or T.TextDim,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                TextTruncate = Enum.TextTruncate.AtEnd,
+                Parent = obtn,
+            })
+            AddTextStroke(olbl)
+            el.OptionButtons[opt] = olbl
+            obtn.MouseButton1Click:Connect(function()
+                select(opt)
+                setOpen(false)
+            end)
+        end
+    end
+
+    if flag then Nebublox.Flags[flag] = el end
+    btn.MouseButton1Click:Connect(function() setOpen(not open) end)
+    el.Refresh(options)
+    if current ~= nil then select(current, true) end
+    return el
+end
+
+-- ---------- TEXTBOX ----------
+local function CompTextBox(tab, data)
+    data = data or {}
+    local flag = data.Flag
+
+    local holder = Create("Frame", {
+        Size = UDim2.new(1, 0, 0, 68),
+        BackgroundColor3 = T.Surface,
+        BackgroundTransparency = T.Glass,
+        LayoutOrder = NextOrder(tab),
+        Parent = GetHolder(tab),
+    })
+    Round(holder, 8)
+    local l = Create("TextLabel", {
+        Size = UDim2.new(1, -24, 0, 14),
+        Position = UDim2.new(0, 12, 0, 8),
+        BackgroundTransparency = 1,
+        Text = data.Name or "Input",
+        Font = T.Font,
+        TextSize = 12,
+        TextColor3 = T.TextDim,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = holder,
+    })
+    AddTextStroke(l)
+    local box = Create("TextBox", {
+        Size = UDim2.new(1, -24, 0, 32),
+        Position = UDim2.new(0, 12, 0, 28),
+        BackgroundColor3 = T.Sidebar,
+        Text = data.Text or "",
+        PlaceholderText = data.PlaceholderText or "Type here...",
+        PlaceholderColor3 = T.TextMuted,
+        TextColor3 = T.Text,
+        Font = T.Font,
+        TextSize = 13,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        ClearTextOnFocus = false,
+        ClipsDescendants = true,
+        Parent = holder,
+    })
+    Round(box, 6)
+    Stroke(box, T.Stroke, 1, 0.5)
+
+    local el = { Type = "TextBox" }
+    el.Set = function(_, v, silent)
+        box.Text = tostring(v or "")
+        if not silent then Fire(data.Callback, box.Text) end
+    end
+    el.Get = function() return box.Text end
+    if flag then Nebublox.Flags[flag] = el end
+    box.FocusLost:Connect(function(enter)
+        Fire(data.Callback, box.Text, enter)
+    end)
+    return el
+end
+
+-- ---------- KEYBIND ----------
+local function CompKeybind(tab, data)
+    data = data or {}
+    local currentBind = data.CurrentKeybind or Enum.KeyCode.Unknown
+
+    local row = Create("TextButton", {
+        Size = UDim2.new(1, 0, 0, 42),
+        BackgroundColor3 = T.Surface,
+        BackgroundTransparency = T.Glass,
+        Text = "",
+        AutoButtonColor = false,
+        LayoutOrder = NextOrder(tab),
+        Parent = GetHolder(tab),
+    })
+    Round(row, 8)
+    local l = Create("TextLabel", {
+        Size = UDim2.new(1, -80, 1, 0),
+        Position = UDim2.new(0, 12, 0, 0),
+        BackgroundTransparency = 1,
+        Text = data.Name or "Keybind",
+        Font = T.Font,
+        TextSize = 13,
+        TextColor3 = T.Text,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = row,
+    })
+    AddTextStroke(l)
+    local chip = Create("TextLabel", {
+        Size = UDim2.new(0, 64, 0, 24),
+        Position = UDim2.new(1, -12, 0.5, 0),
+        AnchorPoint = Vector2.new(1, 0.5),
+        BackgroundColor3 = T.Sidebar,
+        Text = currentBind ~= Enum.KeyCode.Unknown and currentBind.Name or "...",
+        Font = T.FontBold,
+        TextSize = 11,
+        TextColor3 = T.Accent,
+        Parent = row,
+    })
+    Round(chip, 6)
+    Stroke(chip, T.Stroke, 1, 0.5)
+
+    local listening = false
+    row.MouseButton1Click:Connect(function()
+        listening = true
+        chip.Text = "Press..."
+        chip.TextColor3 = T.Warning
+    end)
+    Track(UserInputService.InputBegan:Connect(function(input, gpe)
+        if not listening or gpe then return end
+        if input.KeyCode == Enum.KeyCode.Unknown then return end
+        listening = false
+        currentBind = input.KeyCode
+        chip.Text = currentBind.Name
+        chip.TextColor3 = T.Accent
+        Fire(data.Callback, currentBind)
+    end))
+
+    local el = { Type = "Keybind" }
+    el.Get = function() return currentBind end
+    el.Set = function(_, k) currentBind = k end
+    if data.Flag then Nebublox.Flags[data.Flag] = el end
+    return el
+end
+
+-- ==================================================================
+--  WINDOW
+-- ==================================================================
+local CurrentWindow = nil
+
+function Nebublox:CreateWindow(config)
+    config = config or {}
     if CurrentWindow then
         pcall(function() CurrentWindow:Destroy() end)
     end
+
+    local win = { Tabs = {}, CurrentTab = nil, Frame = nil, Destroyed = false }
+
+    -- ===== main frame =====
+    local main = Create("Frame", {
+        Name = "Main",
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.new(0.5, 0, 0.5, 0),
+        Size = UDim2.new(0, 920, 0, 580),
+        BackgroundColor3 = T.Background,
+        BorderSizePixel = 0,
+        ClipsDescendants = true,
+        Parent = ScreenGui,
+    })
+    Round(main, 14)
+    Stroke(main, T.Stroke, 1, 0.3)
+    win.Frame = main
+
+    -- ===== sidebar =====
+    local sidebar = Create("Frame", {
+        Name = "Sidebar",
+        Size = UDim2.new(0, 200, 1, 0),
+        BackgroundColor3 = T.Sidebar,
+        BorderSizePixel = 0,
+        Parent = main,
+    })
+    do
+        local cl = Create("UICorner", { CornerRadius = UDim.new(0, 14), Parent = sidebar })
+        Create("Frame", {
+            Size = UDim2.new(0, 14, 1, 0),
+            Position = UDim2.new(1, -14, 0, 0),
+            BackgroundColor3 = T.Sidebar,
+            BorderSizePixel = 0,
+            Parent = sidebar,
+        })
+        Create("Frame", {
+            Size = UDim2.new(0, 1, 1, 0),
+            Position = UDim2.new(1, -1, 0, 0),
+            BackgroundColor3 = T.Stroke,
+            BackgroundTransparency = 0.5,
+            BorderSizePixel = 0,
+            Parent = sidebar,
+        })
+    end
+
+    -- logo (holographic — Nebublox soul)
+    local logo = Create("TextLabel", {
+        Size = UDim2.new(1, -24, 0, 30),
+        Position = UDim2.new(0, 14, 0, 14),
+        BackgroundTransparency = 1,
+        RichText = true,
+        Text = "NEBU<b>BLOX</b>",
+        Font = T.FontBold,
+        TextSize = 22,
+        TextColor3 = T.Text,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = sidebar,
+    })
+    MakeHolographic(logo)
+    local verTag = Create("TextLabel", {
+        Size = UDim2.new(1, -28, 0, 12),
+        Position = UDim2.new(0, 14, 0, 44),
+        BackgroundTransparency = 1,
+        Text = "v" .. Nebublox.Version .. "  •  " .. Nebublox.Executor,
+        Font = T.Font,
+        TextSize = 10,
+        TextColor3 = T.TextMuted,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = sidebar,
+    })
+
+    -- nav
+    local navScroll = Create("ScrollingFrame", {
+        Size = UDim2.new(1, -12, 1, -120),
+        Position = UDim2.new(0, 6, 0, 66),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        ScrollBarThickness = 3,
+        ScrollBarImageColor3 = T.Accent,
+        CanvasSize = UDim2.new(0, 0, 0, 0),
+        AutomaticCanvasSize = Enum.AutomaticSize.Y,
+        Parent = sidebar,
+    })
+    Create("UIListLayout", {
+        Padding = UDim.new(0, 4),
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Parent = navScroll,
+    })
+
+    -- sidebar footer
+    local foot = Create("TextLabel", {
+        Size = UDim2.new(1, -20, 0, 14),
+        Position = UDim2.new(0, 12, 1, -22),
+        BackgroundTransparency = 1,
+        Text = "session " .. Nebublox.SessionID,
+        Font = T.Font,
+        TextSize = 10,
+        TextColor3 = T.TextMuted,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = sidebar,
+    })
+
+    -- ===== header =====
+    local header = Create("Frame", {
+        Name = "Header",
+        Size = UDim2.new(1, -200, 0, 56),
+        Position = UDim2.new(0, 200, 0, 0),
+        BackgroundColor3 = T.Surface,
+        BorderSizePixel = 0,
+        Parent = main,
+    })
+    local pageTitle = Create("TextLabel", {
+        Size = UDim2.new(0, 260, 1, 0),
+        Position = UDim2.new(0, 18, 0, 0),
+        BackgroundTransparency = 1,
+        Text = "Dashboard",
+        Font = T.FontBold,
+        TextSize = 17,
+        TextColor3 = T.Text,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = header,
+    })
+    AddTextStroke(pageTitle)
+
+    local search = Create("TextBox", {
+        Size = UDim2.new(0, 190, 0, 32),
+        Position = UDim2.new(1, -410, 0.5, 0),
+        AnchorPoint = Vector2.new(0, 0.5),
+        BackgroundColor3 = T.Sidebar,
+        Text = "",
+        PlaceholderText = "🔍 Search...",
+        PlaceholderColor3 = T.TextMuted,
+        TextColor3 = T.Text,
+        Font = T.Font,
+        TextSize = 13,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        ClearTextOnFocus = false,
+        ClipsDescendants = true,
+        Parent = header,
+    })
+    Round(search, 8)
+    Stroke(search, T.Stroke, 1, 0.5)
+
+    local fpsChip = Create("TextLabel", {
+        Size = UDim2.new(0, 72, 0, 32),
+        Position = UDim2.new(1, -205, 0.5, 0),
+        AnchorPoint = Vector2.new(0, 0.5),
+        BackgroundColor3 = T.Sidebar,
+        Text = "60 FPS",
+        Font = T.FontBold,
+        TextSize = 12,
+        TextColor3 = T.Success,
+        Parent = header,
+    })
+    Round(fpsChip, 8)
+    Stroke(fpsChip, T.Accent, 1, 0.6)
+
+    local userChip = Create("Frame", {
+        Size = UDim2.new(0, 150, 0, 32),
+        Position = UDim2.new(1, -14, 0.5, 0),
+        AnchorPoint = Vector2.new(1, 0.5),
+        BackgroundColor3 = T.Sidebar,
+        Parent = header,
+    })
+    Round(userChip, 8)
+    Stroke(userChip, T.Stroke, 1, 0.5)
+    Create("TextLabel", {
+        Size = UDim2.new(0, 22, 1, 0),
+        Position = UDim2.new(0, 6, 0, 0),
+        BackgroundTransparency = 1,
+        Text = "👤",
+        TextSize = 14,
+        Font = T.Font,
+        Parent = userChip,
+    })
+    local userName = Create("TextLabel", {
+        Size = UDim2.new(1, -36, 1, 0),
+        Position = UDim2.new(0, 30, 0, 0),
+        BackgroundTransparency = 1,
+        Text = LocalPlayer.Name,
+        Font = T.FontBold,
+        TextSize = 12,
+        TextColor3 = T.Text,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextTruncate = Enum.TextTruncate.AtEnd,
+        Parent = userChip,
+    })
+    AddTextStroke(userName)
+
+    -- ===== content =====
+    local content = Create("ScrollingFrame", {
+        Name = "Content",
+        Size = UDim2.new(1, -200, 1, -56),
+        Position = UDim2.new(0, 200, 0, 56),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        ScrollBarThickness = 4,
+        ScrollBarImageColor3 = T.Accent2,
+        CanvasSize = UDim2.new(0, 0, 0, 0),
+        AutomaticCanvasSize = Enum.AutomaticSize.Y,
+        Parent = main,
+    })
+    Create("UIPadding", {
+        PaddingTop = UDim.new(0, 14),
+        PaddingBottom = UDim.new(0, 14),
+        PaddingLeft = UDim.new(0, 14),
+        PaddingRight = UDim.new(0, 14),
+        Parent = content,
+    })
+    Create("UIListLayout", {
+        Padding = UDim.new(0, 12),
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Parent = content,
+    })
+
+    -- ===== search filter =====
+    search:GetPropertyChangedSignal("Text"):Connect(function()
+        local q = search.Text:lower()
+        for _, tab in ipairs(win.Tabs) do
+            if tab.NavButton then
+                tab.NavButton.Visible = (q == "") or (tab.Name:lower():find(q, 1, true) ~= nil)
+            end
+        end
+    end)
+
+    -- ===== dragging =====
+    do
+        local dragging, dragStart, startPos = false, nil, nil
+        Track(header.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1
+                or input.UserInputType == Enum.UserInputType.Touch then
+                dragging = true
+                dragStart = input.Position
+                startPos = main.Position
+            end
+        end))
+        Track(UserInputService.InputChanged:Connect(function(input)
+            if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+                or input.UserInputType == Enum.UserInputType.Touch) then
+                local delta = input.Position - dragStart
+                main.Position = UDim2.new(
+                    startPos.X.Scale, startPos.X.Offset + delta.X,
+                    startPos.Y.Scale, startPos.Y.Offset + delta.Y
+                )
+            end
+        end))
+        Track(UserInputService.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1
+                or input.UserInputType == Enum.UserInputType.Touch then
+                dragging = false
+            end
+        end))
+    end
+
+    -- ===== FPS chip loop =====
+    task.spawn(function()
+        while win.Frame and win.Frame.Parent do
+            pcall(function()
+                fpsChip.Text = tostring(FPS.value) .. " FPS"
+                if FPS.value >= 45 then
+                    fpsChip.TextColor3 = T.Success
+                elseif FPS.value >= 25 then
+                    fpsChip.TextColor3 = T.Warning
+                else
+                    fpsChip.TextColor3 = T.Error
+                end
+            end)
+            task.wait(0.5)
+        end
+    end)
+
+    -- ===== select tab =====
+    local function SelectTab(tab)
+        for _, t in ipairs(win.Tabs) do
+            t.Page.Visible = false
+            if t.NavAccent then t.NavAccent.Visible = false end
+            t.NavButton.BackgroundColor3 = T.Sidebar
+            t.NavButton.BackgroundTransparency = 0
+            t.NavLabel.TextColor3 = T.TextDim
+            if t.NavIcon then t.NavIcon.TextTransparency = 0.4 end
+        end
+        tab.Page.Visible = true
+        if tab.NavAccent then tab.NavAccent.Visible = true end
+        tab.NavButton.BackgroundColor3 = T.SurfaceLight
+        tab.NavButton.BackgroundTransparency = T.Glass
+        tab.NavLabel.TextColor3 = T.Accent
+        if tab.NavIcon then tab.NavIcon.TextTransparency = 0 end
+        pageTitle.Text = tab.Name
+        win.CurrentTab = tab
+    end
+
+    -- ===== tab builder =====
+    local tabOrder = 0
+    local function BuildTab(name, icon)
+        tabOrder = tabOrder + 1
+        local tab = {
+            Name = name,
+            order = 0,
+            currentCard = nil,
+        }
+
+        local navBtn = Create("TextButton", {
+            Name = "Nav_" .. name,
+            Size = UDim2.new(1, 0, 0, 42),
+            BackgroundColor3 = T.Sidebar,
+            Text = "",
+            AutoButtonColor = false,
+            ClipsDescendants = true,
+            LayoutOrder = tabOrder,
+            Parent = navScroll,
+        })
+        Round(navBtn, 8)
+        local navAccent = Create("Frame", {
+            Size = UDim2.new(0, 3, 0, 20),
+            Position = UDim2.new(0, 0, 0.5, 0),
+            AnchorPoint = Vector2.new(0, 0.5),
+            BackgroundColor3 = T.Accent,
+            BorderSizePixel = 0,
+            Visible = false,
+            Parent = navBtn,
+        })
+        Round(navAccent, 2)
+        local navIcon = Create("TextLabel", {
+            Size = UDim2.new(0, 22, 0, 22),
+            Position = UDim2.new(0, 14, 0.5, 0),
+            AnchorPoint = Vector2.new(0, 0.5),
+            BackgroundTransparency = 1,
+            Text = icon or "◈",
+            TextSize = 15,
+            Font = T.Font,
+            TextColor3 = T.TextDim,
+            TextTransparency = 0.4,
+            Parent = navBtn,
+        })
+        local navLabel = Create("TextLabel", {
+            Size = UDim2.new(1, -52, 0, 20),
+            Position = UDim2.new(0, 44, 0.5, 0),
+            AnchorPoint = Vector2.new(0, 0.5),
+            BackgroundTransparency = 1,
+            Text = name,
+            Font = T.FontBold,
+            TextSize = 13,
+            TextColor3 = T.TextDim,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            Parent = navBtn,
+        })
+        AddTextStroke(navLabel)
+
+        local page = Create("ScrollingFrame", {
+            Name = "Page_" .. name,
+            Size = UDim2.new(1, 0, 1, 0),
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+            ScrollBarThickness = 4,
+            ScrollBarImageColor3 = T.Accent2,
+            CanvasSize = UDim2.new(0, 0, 0, 0),
+            AutomaticCanvasSize = Enum.AutomaticSize.Y,
+            Visible = false,
+            Parent = content,
+        })
+        Create("UIPadding", {
+            PaddingTop = UDim.new(0, 2),
+            PaddingBottom = UDim.new(0, 2),
+            Parent = page,
+        })
+        Create("UIListLayout", {
+            Padding = UDim.new(0, 10),
+            SortOrder = Enum.SortOrder.LayoutOrder,
+            Parent = page,
+        })
+
+        tab.NavButton = navBtn
+        tab.NavAccent = navAccent
+        tab.NavIcon = navIcon
+        tab.NavLabel = navLabel
+        tab.Page = page
+
+        navBtn.MouseButton1Click:Connect(function() SelectTab(tab) end)
+        navBtn.MouseEnter:Connect(function()
+            if win.CurrentTab ~= tab then
+                Tween(navBtn, { BackgroundColor3 = T.Surface }, 0.15)
+            end
+        end)
+        navBtn.MouseLeave:Connect(function()
+            if win.CurrentTab ~= tab then
+                Tween(navBtn, { BackgroundColor3 = T.Sidebar }, 0.15)
+            end
+        end)
+
+        -- ===== component methods (direct closures — bulletproof) =====
+        function tab:CreateSection(d) CompSection(self, d) end
+        function tab:CreateLabel(d) return CompLabel(self, d) end
+        function tab:CreateParagraph(d) return CompParagraph(self, d) end
+        function tab:CreateButton(d) return CompButton(self, d) end
+        function tab:CreateToggle(d) return CompToggle(self, d) end
+        function tab:CreateSlider(d) return CompSlider(self, d) end
+        function tab:CreateDropdown(d) return CompDropdown(self, d) end
+        function tab:CreateTextBox(d) return CompTextBox(self, d) end
+        function tab:CreateKeybind(d) return CompKeybind(self, d) end
+
+        table.insert(win.Tabs, tab)
+
+        -- Dashboard auto-build
+        if name:lower() == "dashboard" then
+            Nebublox:BuildDashboard(win, tab)
+        end
+
+        if #win.Tabs == 1 then
+            SelectTab(tab)
+        end
+
+        return tab
+    end
+
+    function win:CreateTab(name, icon)
+        return BuildTab(name, icon)
+    end
+
+    function win:Destroy()
+        win.Destroyed = true
+        pcall(function() ScreenGui:Destroy() end)
+        for _, c in ipairs(Nebublox.Conns) do
+            pcall(function() c:Disconnect() end)
+        end
+        table.clear(Nebublox.Conns)
+        CurrentWindow = nil
+    end
+
+    CurrentWindow = win
+    return win
 end
 
-return Nebublox
+-- ==================================================================
+--  DASHBOARD AUTO-BUILD
+-- ==================================================================
+function Nebublox:BuildDashboard(win, tab)
+    -- ===== welcome banner =====
+    local banner = NewCard(tab, "")
+    banner.Parent.BackgroundColor3 = T.SurfaceLight
+    local bp = Create("UIPadding", {
+        PaddingTop = UDim.new(0, 16),
+        PaddingBottom = UDim.new(0, 16),
+        PaddingLeft = UDim.new(0, 16),
+        PaddingRight = UDim.new(0, 16),
+        Parent = banner,
+    })
+    local wt = Create("TextLabel", {
+        Size = UDim2.new(1, 0, 0, 26),
+        BackgroundTransparency = 1,
+        RichText = true,
+        Text = "✨ Welcome to <font color='#" .. T.Accent:ToHex() .. "'>Nebublox</font>! ✨",
+        Font = T.FontBold,
+        TextSize = 21,
+        TextColor3 = T.Text,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = banner,
+    })
+    local ws = Create("TextLabel", {
+        Size = UDim2.new(1, 0, 0, 16),
+        BackgroundTransparency = 1,
+        Text = "Welcome back, " .. LocalPlayer.DisplayName .. "  •  " .. Nebublox.Executor
+            .. "  •  session " .. Nebublox.SessionID,
+        Font = T.Font,
+        TextSize = 12,
+        TextColor3 = T.TextDim,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = banner,
+    })
+    AddTextStroke(ws)
+
+    -- ===== stat cards (2x2 grid) =====
+    local gridCard = NewCard(tab, "")
+    local grid = Create("Frame", {
+        Size = UDim2.new(1, 0, 0, 0),
+        AutomaticSize = Enum.AutomaticSize.Y,
+        BackgroundTransparency = 1,
+        Parent = gridCard,
+    })
+    Create("UIGridLayout", {
+        CellSize = UDim2.new(0.5, -5, 0, 74),
+        CellPadding = UDim2.new(0, 10, 0, 10),
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Parent = grid,
+    })
+    local function StatCard(icon, label)
+        local card = Create("Frame", {
+            BackgroundColor3 = T.Surface,
+            BackgroundTransparency = T.Glass,
+            Parent = grid,
+        })
+        Round(card, 10)
+        Stroke(card, T.Stroke, 1, 0.5)
+        Create("TextLabel", {
+            Size = UDim2.new(0, 26, 0, 26),
+            Position = UDim2.new(0, 12, 0, 12),
+            BackgroundTransparency = 1,
+            Text = icon,
+            TextSize = 18,
+            Font = T.Font,
+            Parent = card,
+        })
+        local lbl = Create("TextLabel", {
+            Size = UDim2.new(1, -56, 0, 13),
+            Position = UDim2.new(0, 46, 0, 14),
+            BackgroundTransparency = 1,
+            Text = label,
+            Font = T.Font,
+            TextSize = 11,
+            TextColor3 = T.TextMuted,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            Parent = card,
+        })
+        local value = Create("TextLabel", {
+            Size = UDim2.new(1, -56, 0, 20),
+            Position = UDim2.new(0, 46, 0, 32),
+            BackgroundTransparency = 1,
+            Text = "...",
+            Font = T.FontBold,
+            TextSize = 14,
+            TextColor3 = T.Text,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextTruncate = Enum.TextTruncate.AtEnd,
+            Parent = card,
+        })
+        AddTextStroke(value)
+        return value
+    end
+    local gameVal = StatCard("🎮", "GAME")
+    local serverVal = StatCard("🌐", "SERVER")
+    local playersVal = StatCard("👥", "PLAYERS")
+    local execVal = StatCard("⚙️", "EXECUTOR")
+
+    -- ===== FPS graph =====
+    local perfCard = NewCard(tab, "📊 PERFORMANCE")
+    local graphArea = Create("Frame", {
+        Size = UDim2.new(1, 0, 0, 110),
+        BackgroundColor3 = T.Sidebar,
+        BorderSizePixel = 0,
+        ClipsDescendants = true,
+        Parent = perfCard,
+    })
+    Round(graphArea, 8)
+    local bars = {}
+    local BAR_COUNT = 60
+    for i = 1, BAR_COUNT do
+        local bar = Create("Frame", {
+            Size = UDim2.new(1 / BAR_COUNT, -1.5, 0, 4),
+            Position = UDim2.new((i - 1) / BAR_COUNT, 0, 1, -4),
+            AnchorPoint = Vector2.new(0, 1),
+            BackgroundColor3 = T.Accent,
+            BackgroundTransparency = 0.35,
+            BorderSizePixel = 0,
+            Parent = graphArea,
+        })
+        Round(bar, 1)
+        bars[i] = bar
+    end
+
+    -- ===== live updater =====
+    task.spawn(function()
+        local gameName = ""
+        pcall(function() gameName = game.Name end)
+        if gameName == "" then gameName = "Place " .. tostring(game.PlaceId) end
+        local jobText = (game.JobId ~= "") and (game.JobId:sub(1, 8) .. "…") or "Private"
+        while win.Frame and win.Frame.Parent and not win.Destroyed do
+            pcall(function()
+                gameVal.Text = gameName
+                serverVal.Text = jobText
+                playersVal.Text = tostring(#Players:GetPlayers()) .. " / " .. tostring(Players.MaxPlayers)
+                execVal.Text = Nebublox.Executor
+                local areaH = graphArea.AbsoluteSize.Y - 8
+                local n = #FPS.history
+                for i = 1, BAR_COUNT do
+                    local idx = n - BAR_COUNT + i
+                    local fps = (idx > 0) and FPS.history[idx] or nil
+                    local h = fps and math.clamp(fps / 120, 0.04, 1) * areaH or 4
+                    bars[i].Size = UDim2.new(1 / BAR_COUNT, -1.5, 0, h)
+                    if fps then
+                        if fps >= 45 then
+                            bars[i].BackgroundColor3 = T.Success
+                        elseif fps >= 25 then
+                            bars[i].BackgroundColor3 = T.Warning
+                        else
+                            bars[i].BackgroundColor3 = T.Error
+                        end
+                    end
+                end
+            end)
+            task.wait(0.5)
+        end
+    end)
+
+    -- ===== quick actions =====
+    local quickCard = NewCard(tab, "⚡ QUICK ACTIONS")
+    local qrow = Create("Frame", {
+        Size = UDim2.new(1, 0, 0, 40),
+        BackgroundTransparency = 1,
+        Parent = quickCard,
+    })
+    local function QuickBtn(text, order, cb)
+        local b = Create("TextButton", {
+            Size = UDim2.new(1 / 3, -6, 1, 0),
+            Position = UDim2.new((order - 1) / 3, 0, 0, 0),
+            BackgroundColor3 = T.SurfaceLight,
+            BackgroundTransparency = T.Glass,
+            Text = "",
+            AutoButtonColor = false,
+            Parent = qrow,
+        })
+        Round(b, 8)
+        Stroke(b, T.Accent2, 1, 0.6)
+        local l = Create("TextLabel", {
+            Size = UDim2.new(1, 0, 1, 0),
+            BackgroundTransparency = 1,
+            Text = text,
+            Font = T.FontBold,
+            TextSize = 12,
+            TextColor3 = T.Text,
+            Parent = b,
+        })
+        AddTextStroke(l)
+        b.MouseButton1Click:Connect(cb)
+        return b
+    end
+    QuickBtn("💾 Save Config", 1, function()
+        local name = (Nebublox.Flags.cfgName and Nebublox.Flags.cfgName:Get()) or "default"
+        local ok = Nebublox:SaveConfig(name)
+        Nebublox:Notify({ Title = "Configs", Content = ok and ("Saved: " .. name) or "Save failed", Type = ok and "success" or "error" })
+    end)
+    QuickBtn("📂 Load Config", 2, function()
+        local name = (Nebublox.Flags.cfgName and Nebublox.Flags.cfgName:Get()) or "default"
+        local ok = Nebublox:LoadConfig(name)
+        Nebublox:Notify({ Title = "Configs", Content = ok and ("Loaded: " .. name) or "Not found", Type = ok and "success" or "error" })
+    end)
+    QuickBtn("🔄 Rejoin", 3, function()
+        Nebublox:Notify({ Title = "Server", Content = "Hopping...", Type = "info" })
+        Nebublox:ServerHop()
+    end)
+end
+
+-- ==================================================================
+--  KEYBIND TOGGLE + INIT
+-- ==================================================================
+genv.Nebublox_KeyConn = UserInputService.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+    if input.KeyCode == Nebublox.UIKeybind then
+        ScreenGui.Enabled = not ScreenGui.Enabled
+    end
+end)
+table.insert(Nebublox.Conns, genv.Nebublox_KeyConn)
+
+function Nebublox:Destroy()
+    if CurrentWindow then
+        pcall(function() CurrentWindow:Destroy() end)
+    else
+        pcall(function() ScreenGui:Destroy() end)
+        for _, g in ipairs(Nebublox.Windows) do
+            pcall(function() g:Destroy() end)
+        end
+        for _, c in ipairs(Nebublox.Conns) do
+            pcall(function() c:Disconnect() end)
+        end
+        table.clear(Nebublox.Conns)
+    end
+end
+
+print("[Nebublox] ✅ v" .. Nebublox.Version .. " loaded (" .. Nebublox.Executor .. ")")
+
+-- ════════════════════════════════════════════════════════════════
+--  🐾 PETS UNIVERSE AUTO FARM (built-in example — runs on paste)
+-- ════════════════════════════════════════════════════════════════
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local function getServiceRemote(serviceName, folderName, remoteName)
+    local remote
+    pcall(function()
+        remote = ReplicatedStorage.Packages.Knit.Services
+            :WaitForChild(serviceName, 5)
+            :WaitForChild(folderName, 5)
+            :WaitForChild(remoteName, 5)
+    end)
+    if not remote then
+        warn("[Nebublox] Remote missing: " .. serviceName .. "." .. remoteName)
+    end
+    return remote
+end
+
+local ClaimClickBonus = getServiceRemote("BreakableOrbService", "RE", "ClaimClickBonus")
+local SetAutoBreaking = getServiceRemote("BreakableAreaService", "RE", "SetAutoBreaking")
+local ClaimGift       = getServiceRemote("PlaytimeGiftsService", "RE", "ClaimGift")
+local EggHatch        = getServiceRemote("EggHatchService", "RE", "Hatch")
+local PartyEggClaim   = getServiceRemote("PartyEggService", "RE", "Claim")
+
+local Breakables = workspace:WaitForChild("Breakables", 15)
+local PlayerData
+pcall(function()
+    PlayerData = require(ReplicatedStorage:WaitForChild("Modules", 10):WaitForChild("PlayerData", 10))
+end)
+local BreakableEffects
+pcall(function()
+    BreakableEffects = require(ReplicatedStorage.Modules:WaitForChild("BreakableEffects", 5))
+end)
+local PartyEggModule
+pcall(function()
+    PartyEggModule = require(ReplicatedStorage.Modules:WaitForChild("PartyEggModule", 5))
+end)
+
+local S = {
+    autoFarm = false,
+    targetMode = "HighestHP",
+    autoGift = false,
+    autoPartyEgg = false,
+    autoHatch = false,
+    hatchEggName = "",
+    hatchMode = "Max",
+}
+
+-- currency
+local function getCurrency(model)
+    if BreakableEffects and BreakableEffects.GetCurrency then
+        local ok, cur = pcall(BreakableEffects.GetCurrency, model)
+        if ok and type(cur) == "string" then return cur end
+    end
+    local pn = model.Parent and model.Parent.Name or ""
+    local mn = model.Name or ""
+    if pn:lower():find("ruby") or mn:lower():find("ruby") then return "Rubies" end
+    if pn:lower():find("fruit") or mn:lower():find("fruit") then return "Fruits" end
+    return "Coins"
+end
+local currencyCache = setmetatable({}, { __mode = "k" })
+local function getCurrencySafe(model)
+    local c = currencyCache[model]
+    if c then return c end
+    local ok, cur = pcall(getCurrency, model)
+    if ok and type(cur) == "string" then
+        currencyCache[model] = cur
+        return cur
+    end
+    return "Coins"
+end
+local function isPriorityCurrency(cur)
+    return not cur:lower():find("coin")
+end
+
+-- breakable helpers
+local function getZoneBreakables(zone)
+    local list = {}
+    if not Breakables then return list end
+    local folder = zone ~= "" and Breakables:FindFirstChild(zone)
+    if folder then
+        for _, m in ipairs(folder:GetChildren()) do
+            if m:IsA("Model") then table.insert(list, m) end
+        end
+    else
+        for _, f in ipairs(Breakables:GetChildren()) do
+            if f:IsA("Folder") then
+                for _, m in ipairs(f:GetChildren()) do
+                    if m:IsA("Model") then table.insert(list, m) end
+                end
+            end
+        end
+    end
+    return list
+end
+
+local posCache = setmetatable({}, { __mode = "k" })
+local function getModelPosition(model)
+    local c = posCache[model]
+    local now = os.clock()
+    if c and (now - c.at) < 0.25 then return c.pos end
+    local pp = model.PrimaryPart
+        or model:FindFirstChild("Primary")
+        or model:FindFirstChildWhichIsA("BasePart", true)
+    local pos = nil
+    if pp then
+        pos = pp.Position
+    else
+        local ok, pivot = pcall(model.GetPivot, model)
+        if ok and pivot then pos = pivot.Position end
+    end
+    if pos then posCache[model] = { pos = pos, at = now } end
+    return pos
+end
+
+local function parseHPFromText(text)
+    if type(text) ~= "string" then return nil end
+    local clean = text:gsub("[,%s]", "")
+    local num = tonumber(clean:match("^(%d+)") or clean:match("(%d+)"))
+    if num and num >= 0 and num == num then return num end
+    return nil
+end
+
+local function readBreakableHP(model)
+    local damageUI = model:FindFirstChild("DamageUI")
+    if damageUI then
+        local frame = damageUI:FindFirstChild("Frame")
+        if frame then
+            local hp = frame:FindFirstChild("Hp")
+            if hp then
+                local v = hp.Value
+                if typeof(v) == "number" and v == v and v >= 0 then
+                    return v
+                end
+            end
+        end
+    end
+    for _, attr in ipairs({ "Hp", "HP", "Health" }) do
+        local v = model:GetAttribute(attr)
+        if typeof(v) == "number" and v == v and v >= 0 then
+            return v
+        end
+    end
+    for _, d in ipairs(model:GetDescendants()) do
+        if d:IsA("NumberValue") or d:IsA("IntValue") then
+            local n = d.Name:lower()
+            if n == "hp" or n == "health" then
+                local v = d.Value
+                if typeof(v) == "number" and v == v and v >= 0 then
+                    return v
+                end
+            end
+        end
+    end
+    if damageUI then
+        local tl = damageUI:FindFirstChildWhichIsA("TextLabel", true)
+        if tl then
+            local n = parseHPFromText(tl.Text)
+            if n then return n end
+        end
+    end
+    return nil
+end
+
+local hpCache = setmetatable({}, { __mode = "k" })
+local function getBreakableHP(model)
+    local c = hpCache[model]
+    local now = os.clock()
+    if c and (now - c.at) < 0.1 then return c.hp end
+    local hp = readBreakableHP(model)
+    hpCache[model] = { hp = hp, at = now }
+    return hp
+end
+
+local function getCharPos()
+    local char = LocalPlayer.Character
+    if char then
+        local hrp = char:FindFirstChild("HumanoidRootPart") or char.PrimaryPart
+        if hrp then return hrp.Position end
+    end
+    return Vector3.new()
+end
+
+-- click engine
+local BURST = 12
+local claimTimes = setmetatable({}, { __mode = "k" })
+local function tryClaimBonus(model)
+    if not ClaimClickBonus then return end
+    local coinId = model:GetAttribute("CoinId")
+    if typeof(coinId) ~= "string" or coinId == "" then return end
+    local now = os.clock()
+    local t = claimTimes[model]
+    if t and (now - t) < 0.2 then return end
+    claimTimes[model] = now
+    pcall(function() ClaimClickBonus:FireServer(coinId) end)
+end
+local function clickTarget(model)
+    local cd = model:FindFirstChild("ClickDetector")
+    if not cd then return end
+    for _ = 1, BURST do
+        pcall(function() fireclickdetector(cd) end)
+    end
+    tryClaimBonus(model)
+end
+
+local zoneCache = { zone = nil, list = nil, at = 0 }
+local function getCachedBreakables(zone)
+    local now = os.clock()
+    if zoneCache.list and zoneCache.zone == zone and (now - zoneCache.at) < 0.1 then
+        return zoneCache.list
+    end
+    local list = getZoneBreakables(zone)
+    zoneCache.zone = zone
+    zoneCache.list = list
+    zoneCache.at = now
+    return list
+end
+
+local function getSortedTargets(list)
+    local origin = getCharPos()
+    local entries = {}
+    for _, m in ipairs(list) do
+        if m.Parent then
+            local pos = getModelPosition(m)
+            if pos then
+                entries[#entries + 1] = {
+                    target = m,
+                    dist = (pos - origin).Magnitude,
+                    hp = getBreakableHP(m),
+                }
+            end
+        end
+    end
+    local prio, coins = {}, {}
+    for _, e in ipairs(entries) do
+        if isPriorityCurrency(getCurrencySafe(e.target)) then
+            prio[#prio + 1] = e
+        else
+            coins[#coins + 1] = e
+        end
+    end
+    entries = (#prio > 0) and prio or coins
+
+    local mode = S.targetMode
+    local useLowHP = (mode == "LowestHP")
+    local useHighHP = (mode == "HighestHP")
+    if useLowHP or useHighHP then
+        local withHP = {}
+        for _, e in ipairs(entries) do
+            if e.hp ~= nil then withHP[#withHP + 1] = e end
+        end
+        if #withHP > 0 then
+            entries = withHP
+        else
+            useLowHP = false
+            useHighHP = false
+        end
+    end
+    if useHighHP then
+        table.sort(entries, function(a, b) return a.hp > b.hp end)
+    elseif useLowHP then
+        table.sort(entries, function(a, b) return a.hp < b.hp end)
+    else
+        table.sort(entries, function(a, b) return a.dist < b.dist end)
+    end
+    return entries
+end
+
+local lockedTarget = nil
+local lastPickMode = nil
+local function isLockValid(m)
+    if not m or not m.Parent then return false end
+    local hp = getBreakableHP(m)
+    if hp ~= nil and hp <= 0 then return false end
+    return true
+end
+
+local function doClickPass()
+    if not S.autoFarm then return end
+    if not PlayerData then return end
+    local bd
+    local ok = pcall(function() bd = PlayerData.Folder(LocalPlayer, "BreakableData") end)
+    if not ok or not bd then return end
+    local inArea = bd:FindFirstChild("InArea")
+    local autoBreak = bd:FindFirstChild("AutoBreaking")
+    local areaVal = bd:FindFirstChild("Area")
+    if not (inArea and areaVal and (inArea.Value or (autoBreak and autoBreak.Value))) then
+        return
+    end
+    local list = getCachedBreakables(areaVal.Value)
+    if lastPickMode ~= S.targetMode then
+        lastPickMode = S.targetMode
+        lockedTarget = nil
+    end
+    if lockedTarget and not isLockValid(lockedTarget) then
+        lockedTarget = nil
+    end
+    if not lockedTarget then
+        local entries = getSortedTargets(list)
+        if #entries > 0 then
+            lockedTarget = entries[1].target
+        end
+    end
+    if lockedTarget then
+        clickTarget(lockedTarget)
+    end
+end
+
+-- MAXIMUM passes
+task.spawn(function()
+    while true do
+        RunService.Heartbeat:Wait()
+        pcall(doClickPass)
+    end
+end)
+for _, ev in ipairs({ RunService.PreSimulation, RunService.PreAnimation, RunService.PreRender }) do
+    ev:Connect(function() pcall(doClickPass) end)
+end
+
+-- party egg
+local partyElapsedRef
+local function getPartyStatus()
+    if not PartyEggModule then return nil end
+    local required = tonumber(PartyEggModule.RequiredSeconds) or 0
+    if required <= 0 then
+        required = (tonumber(PartyEggModule.RequiredMinutes) or 0) * 60
+    end
+    if required <= 0 then return nil end
+    if not partyElapsedRef or not partyElapsedRef.Parent then
+        partyElapsedRef = nil
+        local folderName = PartyEggModule.DataFolderName
+        local valueName = PartyEggModule.ElapsedValueName
+        if folderName and valueName then
+            local folder
+            pcall(function() folder = PlayerData.Folder(LocalPlayer, folderName) end)
+            if not folder and PlayerData.WaitForFolder then
+                pcall(function() folder = PlayerData.WaitForFolder(LocalPlayer, folderName, 1) end)
+            end
+            if not folder then
+                folder = LocalPlayer:FindFirstChild(folderName)
+            end
+            if folder then
+                partyElapsedRef = folder:FindFirstChild(valueName)
+            end
+        end
+    end
+    local elapsed = 0
+    if partyElapsedRef then
+        pcall(function() elapsed = tonumber(partyElapsedRef.Value) or 0 end)
+    end
+    return {
+        elapsed = elapsed,
+        required = required,
+        ready = elapsed >= required,
+    }
+end
+
+-- egg names
+local function collectEggNames()
+    local names, seen = {}, {}
+    local map = workspace:FindFirstChild("Map")
+    local eggsFolder = map and map:FindFirstChild("Eggs")
+    if eggsFolder then
+        for _, child in ipairs(eggsFolder:GetChildren()) do
+            if child:IsA("Model") and not seen[child.Name] then
+                seen[child.Name] = true
+                table.insert(names, child.Name)
+            end
+        end
+    end
+    local eggsView = LocalPlayer.PlayerGui:FindFirstChild("EggsView")
+    if eggsView then
+        for _, child in ipairs(eggsView:GetChildren()) do
+            if child:IsA("BillboardGui") and not seen[child.Name] then
+                seen[child.Name] = true
+                table.insert(names, child.Name)
+            end
+        end
+    end
+    table.sort(names)
+    return names
+end
+
+-- ================= UI =================
+local Window = Nebublox:CreateWindow({ Title = "Pets Universe" })
+
+local dash = Window:CreateTab("Dashboard", "📊")
+
+local farm = Window:CreateTab("Auto Farm", "🚜")
+farm:CreateSection("🚜 Farm Settings")
+farm:CreateToggle({
+    Name = "Enable Auto Farm (MAX • 💎+🍎 • 🔒 lock • ♾️)",
+    CurrentValue = false,
+    Flag = "autoFarm",
+    Callback = function(v)
+        S.autoFarm = v
+        if SetAutoBreaking then
+            pcall(function() SetAutoBreaking:FireServer(v) end)
+        end
+        Nebublox:Notify({
+            Title = "Auto Farm",
+            Content = v and "ON — MAXIMUM speed!" or "OFF",
+            Type = v and "success" or "info",
+        })
+    end,
+})
+farm:CreateDropdown({
+    Name = "Target Mode (how the NEXT target is picked)",
+    Options = { "Closest", "Lowest HP", "Highest HP" },
+    CurrentOption = "Highest HP",
+    Flag = "targetMode",
+    Callback = function(opt)
+        local map = {
+            ["Closest"] = "Closest",
+            ["Lowest HP"] = "LowestHP",
+            ["Highest HP"] = "HighestHP",
+        }
+        S.targetMode = map[tostring(opt)] or "HighestHP"
+        lockedTarget = nil
+    end,
+})
+
+local rewards = Window:CreateTab("Rewards", "🎁")
+rewards:CreateSection("🎁 Claiming")
+rewards:CreateToggle({
+    Name = "Auto Claim Gifts (playtime rewards)",
+    CurrentValue = false,
+    Flag = "autoGift",
+    Callback = function(v) S.autoGift = v end,
+})
+rewards:CreateToggle({
+    Name = "Auto Claim Party Egg (auto-detects ready)",
+    CurrentValue = false,
+    Flag = "autoPartyEgg",
+    Callback = function(v) S.autoPartyEgg = v end,
+})
+
+local eggs = Window:CreateTab("Eggs", "🥚")
+eggs:CreateSection("🥚 Egg Selection")
+local initialEggs = collectEggNames()
+local eggDropdown = eggs:CreateDropdown({
+    Name = "🥚 Egg",
+    Options = #initialEggs > 0 and initialEggs or { "(no eggs found)" },
+    CurrentOption = #initialEggs > 0 and initialEggs[1] or "(no eggs found)",
+    Flag = "hatchEggName",
+    Callback = function(opt)
+        if type(opt) == "string" and opt ~= "" and opt ~= "(no eggs found)" then
+            S.hatchEggName = opt
+        end
+    end,
+})
+eggs:CreateButton({
+    Name = "🔄 Refresh Egg List",
+    Callback = function()
+        local names = collectEggNames()
+        if #names == 0 then
+            Nebublox:Notify({ Title = "Eggs", Content = "No eggs found", Type = "error" })
+            return
+        end
+        eggDropdown.Refresh(names)
+        Nebublox:Notify({ Title = "Eggs", Content = "Found " .. #names .. " eggs", Type = "success" })
+    end,
+})
+eggs:CreateSection("🎲 Hatching")
+eggs:CreateDropdown({
+    Name = "Hatch Count",
+    Options = { "Single", "Half", "Max" },
+    CurrentOption = "Max",
+    Flag = "hatchMode",
+    Callback = function(opt)
+        local c = tostring(opt)
+        if c == "Single" or c == "Half" or c == "Max" then
+            S.hatchMode = c
+        end
+    end,
+})
+eggs:CreateToggle({
+    Name = "Auto Buy Egg (auto open)",
+    CurrentValue = false,
+    Flag = "autoHatch",
+    Callback = function(v) S.autoHatch = v end,
+})
+
+local settings = Window:CreateTab("Settings", "⚙️")
+settings:CreateSection("💾 Configs")
+settings:CreateTextBox({
+    Name = "Config Name",
+    PlaceholderText = "default",
+    Flag = "cfgName",
+    Callback = function() end,
+})
+settings:CreateButton({
+    Name = "💾 Save Config",
+    Callback = function()
+        local name = (Nebublox.Flags.cfgName and Nebublox.Flags.cfgName.Get()) or "default"
+        local ok = Nebublox:SaveConfig(name)
+        Nebublox:Notify({ Title = "Configs", Content = ok and ("Saved: " .. name) or "Failed", Type = ok and "success" or "error" })
+    end,
+})
+settings:CreateButton({
+    Name = "📂 Load Config",
+    Callback = function()
+        local name = (Nebublox.Flags.cfgName and Nebublox.Flags.cfgName.Get()) or "default"
+        local ok = Nebublox:LoadConfig(name)
+        Nebublox:Notify({ Title = "Configs", Content = ok and ("Loaded: " .. name) or "Not found", Type = ok and "success" or "error" })
+    end,
+})
+settings:CreateSection("⚙️ System")
+settings:CreateButton({
+    Name = "🔄 Server Hop",
+    Callback = function()
+        Nebublox:Notify({ Title = "Server", Content = "Hopping...", Type = "info" })
+        Nebublox:ServerHop()
+    end,
+})
+settings:CreateButton({
+    Name = "🚪 Unload Nebublox",
+    Callback = function()
+        if SetAutoBreaking then
+            pcall(function() SetAutoBreaking:FireServer(false) end)
+        end
+        Nebublox:Destroy()
+    end,
+})
+
+-- ================= LOOPS =================
+task.spawn(function()
+    while true do
+        task.wait(1)
+        if S.autoGift and ClaimGift then
+            for i = 1, 9 do
+                pcall(function() ClaimGift:FireServer("Gift" .. i) end)
+            end
+        end
+    end
+end)
+
+task.spawn(function()
+    while true do
+        task.wait(1)
+        if S.autoPartyEgg and PartyEggClaim then
+            local data = getPartyStatus()
+            if data and data.ready then
+                pcall(function() PartyEggClaim:FireServer() end)
+            end
+        end
+    end
+end)
+
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        if S.autoHatch and EggHatch
+            and S.hatchEggName ~= "" and S.hatchEggName ~= "(no eggs found)" then
+            pcall(function() EggHatch:FireServer(S.hatchEggName, S.hatchMode) end)
+        end
+    end
+end)
+
+Nebublox:Notify({
+    Title = "Nebublox",
+    Content = "✨ Welcome to Nebublox! ✨ — " .. LocalPlayer.Name,
+    Duration = 4,
+})
+print("[Nebublox] 🐾 Pets Universe Auto Farm attached")
+
+end) -- pcall wrapper end
+
+if not OK then
+    warn("════════════════════════════════════════════════")
+    warn("[Nebublox] ❌ SCRIPT ERROR: " .. tostring(ERR))
+    warn("════════════════════════════════════════════════")
+    print("[Nebublox] ❌ SCRIPT ERROR: " .. tostring(ERR))
+end
