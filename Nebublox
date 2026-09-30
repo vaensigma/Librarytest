@@ -1,18 +1,7 @@
---[[
-    NEBUBLOX UI LIBRARY  v7.2.0-Nova  (visual overhaul)
-
-    Zachowane API z v7.0 (MakeWindow / AddTab / AddSection / AddRow / AddButton / AddToggle ...).
-    Nowe: ColorPicker, Config Manager, Dialog, tooltips, poprawione Dropdown (rozwija sie w dol,
-    nie zaslania elementow), poprawny zapis/odczyt configow, lepsze powiadomienia, palety kolorow
-    zmieniajace CALE UI, sprzatanie polaczen (brak wyciekow), oraz wiele poprawek bledow.
-]]
 
 local getgenv = type(getgenv) == "function" and getgenv or function() return _G end
 local genv = getgenv()
 
-----------------------------------------------------------------------
--- Executor shims (bezpieczne fallbacki)
-----------------------------------------------------------------------
 local writefile = type(writefile) == "function" and writefile or function() end
 local readfile = type(readfile) == "function" and readfile or function() return "" end
 local isfile = type(isfile) == "function" and isfile or function() return false end
